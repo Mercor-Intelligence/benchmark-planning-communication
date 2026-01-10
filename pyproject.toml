@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "benchmark-swe-bench-ext"
+version = "0.1.0"
+description = "SWE-Bench Extended benchmark task implementation for eval-framework"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Mercor Intelligence", email = "engineering@mercor.com" },
+]
+
+dependencies = [
+    "pydantic>=2.0",
+]
+
+# Note: eval-framework is added as a git submodule, not a pip dependency
+
+[tool.hatch.build.targets.wheel]
+packages = ["swe_bench_ext"]
