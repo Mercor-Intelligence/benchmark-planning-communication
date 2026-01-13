@@ -14,9 +14,11 @@ pip install -e .
 
 ```python
 from swe_bench_ext import SweBenchExtTask, SweBenchExtConfig
+from task_source.local_folder import LocalFolderTaskSource
 
-# Load task from local path
-task = SweBenchExtTask.from_local_path(Path("/path/to/task"))
+# Load task from task source
+task_source = LocalFolderTaskSource(path="/path/to/tasks")
+task = SweBenchExtTask.from_id("task-id", task_source)
 
 # Get prompts
 system_prompt = task.get_system_prompt()

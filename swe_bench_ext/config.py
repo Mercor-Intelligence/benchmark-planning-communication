@@ -59,8 +59,8 @@ class SweBenchExtConfig(BenchmarkConfig if EVAL_FRAMEWORK_AVAILABLE else BaseMod
     
     # ECR configuration for Docker images
     ecr_registry: str = Field(
-        default="",
-        description="ECR registry URL (set at runtime)",
+        default="612492817237.dkr.ecr.us-east-1.amazonaws.com",
+        description="ECR registry URL",
     )
     ecr_repository: str = Field(
         default="swe-bench-ext",
