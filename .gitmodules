@@ -1,4 +1,4 @@
-[submodule "eval-framework"]
-	path = eval-framework
+[submodule "lighthouse"]
+	path = lighthouse
 	url = https://github.com/Mercor-Intelligence/eval-framework.git
-	branch = main
+	branch = michaelliao/runner-changes

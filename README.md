@@ -1,6 +1,6 @@
 # benchmark-swe-bench-ext
 
-SWE-Bench Extended benchmark task implementation for [eval-framework](https://github.com/Mercor-Intelligence/eval-framework).
+SWE-Bench Extended benchmark task implementation for [lighthouse](https://github.com/Mercor-Intelligence/lighthouse).
 
 ## Setup
 
@@ -10,37 +10,241 @@ cd benchmark-swe-bench-ext
 pip install -e .
 ```
 
-## Usage
+## Task Directory Structure
+
+By default, tasks are loaded from the `tasks/` directory (configured in `config/task_source_config.yaml`). Each task should be in its own subdirectory:
+
+```
+tasks/
+├── django__django-12345/
+│   ├── test_metadata.json      # Test configuration (required)
+│   ├── problem_statement.md    # Problem description
+│   ├── prompt_statement.md     # Customized prompt (optional, falls back to problem_statement)
+│   ├── golden.patch            # Reference solution
+│   ├── test.patch              # Test patch to apply before grading
+│   ├── requirements.json       # List of requirements
+│   ├── interface.md            # Interface specifications (optional)
+│   └── knowledge_base.md       # Additional context (optional)
+├── astropy__astropy-67890/
+│   └── ...
+```
+
+### test_metadata.json Format
+
+```json
+{
+  "language": "python",
+  "test_framework": "pytest",
+  "test_command": "pytest tests/ -xvs",
+  "test_files": ["tests/test_example.py"],
+  "FAIL_TO_PASS": ["tests/test_example.py::test_bug_fix"],
+  "PASS_TO_PASS": ["tests/test_example.py::test_existing"],
+  "base_commit": "abc123"
+}
+```
+
+## Running Evaluations
+
+### Using the CLI
+
+The `lighthouse` CLI is installed with the package and provides commands for both execution (running an agent) and grading (evaluating a solution).
+
+#### Execute a Single Task
+
+Run an agent on a single task:
+
+```bash
+lighthouse execute-single \
+    --benchmark swe_bench_ext \
+    --task-id django__django-12345 \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml
+```
+
+#### Execute Multiple Tasks (Batch)
+
+Create a `tasks.jsonl` file:
+
+```jsonl
+{"task_id": "django__django-12345"}
+{"task_id": "astropy__astropy-67890", "image_override": "custom-image:latest"}
+```
+
+Run batch execution:
+
+```bash
+lighthouse execute-batch \
+    --benchmark swe_bench_ext \
+    --tasks-file tasks.jsonl \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml
+```
+
+### Execution Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--model` | (required) | Model identifier (e.g., `anthropic/claude-sonnet-4-5-20250929`) |
+| `--max-steps` | 100 | Maximum agent steps |
+| `--max-tokens` | 128000 | Maximum total tokens |
+| `--temperature` | 0.0 | Sampling temperature |
+| `--tools` | bash, read_file, write_file | Tools available to the agent |
+| `--num-epochs` | 1 | Number of trials per task (for pass@k) |
+| `--sandbox-type` | modal | Sandbox type (`modal` or `docker`) |
+| `--sandbox-timeout` | 3600 | Maximum sandbox lifetime in seconds |
+
+## Grading Solutions
+
+### Grade a Single Solution
+
+```bash
+lighthouse grade-single \
+    --benchmark swe_bench_ext \
+    --task-id django__django-12345 \
+    --solution-file solution.patch \
+    --task-source-file config/task_source_config.yaml
+```
+
+Optionally include the agent trajectory for analysis:
+
+```bash
+lighthouse grade-single \
+    --benchmark swe_bench_ext \
+    --task-id django__django-12345 \
+    --solution-file solution.patch \
+    --trajectory-file trajectory.json \
+    --task-source-file config/task_source_config.yaml
+```
+
+### Grade Multiple Solutions (Batch)
+
+Create a `predictions.jsonl` file:
+
+```jsonl
+{"task_id": "django__django-12345", "solution": "diff --git a/..."}
+{"task_id": "astropy__astropy-67890", "solution": "diff --git b/...", "trajectory": "..."}
+```
+
+Run batch grading:
+
+```bash
+lighthouse grade-batch \
+    --benchmark swe_bench_ext \
+    --predictions-file predictions.jsonl \
+    --task-source-file config/task_source_config.yaml
+```
+
+### Grading Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--test-timeout` | 600 | Test execution timeout in seconds |
+| `--run-rubric` / `--no-run-rubric` | true | Enable/disable LLM-based rubric grading |
+| `--rubric-model` | (eval model) | Model for rubric grading |
+| `--analyze-trajectory` / `--no-analyze-trajectory` | true | Enable/disable trajectory analysis |
+| `--derive-failure-mode` / `--no-derive-failure-mode` | true | Enable/disable failure mode derivation |
+
+## Configuration Files
+
+### config/task_source_config.yaml
+
+Configures where tasks are loaded from:
+
+```yaml
+source_type: local_folder
+config:
+  path: tasks/
+  build_image_if_not_exists: true
+```
+
+For S3-based tasks:
+
+```yaml
+source_type: s3_zip
+config:
+  path: s3://my-bucket/tasks
+  local_cache_dir: /tmp/task_cache
+```
+
+### config/benchmark_task_config.yaml
+
+Benchmark-specific configuration:
+
+```yaml
+excluded_context: []  # List of context sections to exclude from prompts
+                      # Options: problem_statement, requirements, interface, knowledge_base
+```
+
+## Python API Usage
 
 ```python
 from swe_bench_ext import SweBenchExtTask, SweBenchExtConfig
-from task_source.local_folder import LocalFolderTaskSource
+from lighthouse.task_source.local_folder import LocalFolderTaskSource
 
 # Load task from task source
-task_source = LocalFolderTaskSource(path="/path/to/tasks")
-task = SweBenchExtTask.from_id("task-id", task_source)
+task_source = LocalFolderTaskSource(path="tasks/")
+task = SweBenchExtTask.from_id("django__django-12345", task_source)
 
 # Get prompts
 system_prompt = task.get_system_prompt()
 user_prompt = task.get_initial_user_prompt()
 
 # Get scripts
+setup_script = task.generate_setup_script()
 grading_scripts = task.generate_grading_setup_script()
 test_script = task.generate_test_run_script()
 
 # Parse results
 summary = task.parse_test_results(test_output)
+print(f"Score: {summary.score}")
+print(f"Passed: {summary.metadata['f2p_passed']}/{summary.metadata['f2p_total']}")
 ```
 
-## Structure
+## Project Structure
 
 ```
 benchmark-swe-bench-ext/
 ├── swe_bench_ext/
-│   ├── __init__.py    # Package exports
-│   ├── task.py        # SweBenchExtTask
-│   └── config.py      # Config & Options
-├── eval-framework/    # Git submodule
+│   ├── __init__.py         # Package exports
+│   ├── task.py             # SweBenchExtTask implementation
+│   └── config.py           # SweBenchExtConfig
+├── config/
+│   ├── benchmark_task_config.yaml   # Benchmark configuration
+│   └── task_source_config.yaml      # Task source configuration
+├── tasks/                  # Default task directory
+│   └── <task-id>/          # Individual task folders
+├── lighthouse/             # Git submodule (eval framework)
 ├── pyproject.toml
 └── README.md
+```
+
+## Common Commands
+
+```bash
+# View help
+lighthouse --help
+lighthouse execute-single --help
+
+# Execute with verbose logging
+lighthouse execute-single \
+    --benchmark swe_bench_ext \
+    --task-id my-task \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml \
+    -v
+
+# Execute with concurrency limit
+lighthouse execute-batch \
+    --benchmark swe_bench_ext \
+    --tasks-file tasks.jsonl \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml \
+    --concurrency-limit 5
+
+# Grade with custom test timeout
+lighthouse grade-batch \
+    --benchmark swe_bench_ext \
+    --predictions-file predictions.jsonl \
+    --task-source-file config/task_source_config.yaml \
+    --test-timeout 1200
 ```

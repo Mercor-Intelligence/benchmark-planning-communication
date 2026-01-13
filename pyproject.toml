@@ -14,9 +14,10 @@ authors = [
 
 dependencies = [
     "pydantic>=2.0",
+    "litellm==1.80.15"
 ]
 
 # Note: eval-framework is added as a git submodule, not a pip dependency
 
 [tool.hatch.build.targets.wheel]
-packages = ["swe_bench_ext"]
+packages = ["swe_bench_ext", "lighthouse"]

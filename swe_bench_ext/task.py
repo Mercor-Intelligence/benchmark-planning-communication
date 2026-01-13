@@ -10,37 +10,27 @@ Author: Mercor Intelligence
 
 from __future__ import annotations
 
-import base64
 import json
-import sys
-from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type, Union, TYPE_CHECKING
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
-# Add eval-framework to path if running as submodule
-_eval_framework_path = Path(__file__).parent.parent / "eval-framework"
-if _eval_framework_path.exists() and str(_eval_framework_path) not in sys.path:
-    sys.path.insert(0, str(_eval_framework_path))
+from pydantic import Field
 
-# Import from eval-framework (graceful fallback for standalone testing)
-try:
-    from core.benchmark_tasks.base_benchmark_task import (
-        BaseBenchmarkTask,
-        BaseTaskInstance,
-    )
-    from core.benchmark_tasks.models import TestSummary, TestStatus
-    from core.benchmark_tasks.task_source import TaskSource, FolderTaskSource
-    from core.benchmark_tasks.benchmark_config import BenchmarkConfig, BenchmarkType
-    from core.parsing import create_test_summary_from_output
-    from core.registry import benchmark_task
+from lighthouse.core.benchmark_tasks.base_benchmark_task import (
+    BaseBenchmarkTask,
+    BaseTaskInstance,
+)
+from lighthouse.core.benchmark_tasks.models import TestSummary, TestStatus
+from lighthouse.core.benchmark_tasks.task_source import FolderTaskSource
+from lighthouse.core.benchmark_tasks.benchmark_config import BenchmarkConfig
+from lighthouse.common.parsing import (
+    parse_test_output,
+    normalize_test_id,
+    get_framework_config,
+    get_test_command_with_output,
+)
+from lighthouse.common.utils.cmd_generation import generate_git_init_script, generate_git_apply_script
+from lighthouse.core.registry import benchmark_task
     
-    EVAL_FRAMEWORK_AVAILABLE = True
-except ImportError:
-    EVAL_FRAMEWORK_AVAILABLE = False
-    BaseBenchmarkTask = object
-    BaseTaskInstance = None
-    benchmark_task = lambda name: lambda cls: cls
-
-from pydantic import BaseModel, Field
 from .config import SweBenchExtConfig
 
 
@@ -48,14 +38,13 @@ from .config import SweBenchExtConfig
 # Task Instance Model (extends BaseTaskInstance)
 # =============================================================================
 
-class SweBenchExtTaskInstance(BaseModel):
+class SweBenchExtTaskInstance(BaseTaskInstance):
     """
     SWE-Bench-Ext specific task instance data.
     
     Extends the base task instance with SWE-Bench specific fields.
     """
-    # Required from BaseTaskInstance
-    id: str = Field(description="Task identifier")
+    # Override image_uri to allow empty string initially (will be set by get_default_image_uri)
     image_uri: str = Field(default="", description="Docker image URI")
     
     # SWE-Bench specific fields
@@ -65,6 +54,7 @@ class SweBenchExtTaskInstance(BaseModel):
     test_files: List[str] = Field(default_factory=list, description="Test file paths")
     fail_to_pass: List[str] = Field(default_factory=list, description="Tests that should pass after fix")
     pass_to_pass: List[str] = Field(default_factory=list, description="Tests that should continue to pass")
+    base_commit: str = Field(default="", description="Base commit hash for resetting test files")
     
     # Content fields
     problem_statement: str = Field(default="", description="Problem description")
@@ -73,6 +63,7 @@ class SweBenchExtTaskInstance(BaseModel):
     golden_patch: str = Field(default="", description="Reference solution")
     requirements: List[str] = Field(default_factory=list, description="Requirements list")
     interface: str = Field(default="", description="Interface documentation")
+    knowledge_base: str = Field(default="", description="Knowledge base documentation")
 
 
 # =============================================================================
@@ -80,7 +71,7 @@ class SweBenchExtTaskInstance(BaseModel):
 # =============================================================================
 
 @benchmark_task("swe_bench_ext")
-class SweBenchExtTask(BaseBenchmarkTask if EVAL_FRAMEWORK_AVAILABLE else object):
+class SweBenchExtTask(BaseBenchmarkTask):
     """
     SWE-Bench Extended benchmark task.
     
@@ -102,11 +93,13 @@ class SweBenchExtTask(BaseBenchmarkTask if EVAL_FRAMEWORK_AVAILABLE else object)
         grading_scripts = task.generate_grading_setup_script()
         test_script = task.generate_test_run_script()
     """
+
+    config: SweBenchExtConfig
     
     # === Class-level configuration ===
     config_class: ClassVar[Type[BenchmarkConfig]] = SweBenchExtConfig
-    supported_task_sources: ClassVar[Tuple[Type, ...]] = (FolderTaskSource,) if EVAL_FRAMEWORK_AVAILABLE else ()
-    
+    supported_task_sources: ClassVar[Tuple[Type, ...]] = (FolderTaskSource,)
+
     # === Instance attributes ===
     task_instance: SweBenchExtTaskInstance
     
@@ -115,7 +108,7 @@ class SweBenchExtTask(BaseBenchmarkTask if EVAL_FRAMEWORK_AVAILABLE else object)
     # =========================================================================
     
     @classmethod
-    def _load_task(cls, task_id: str, task_source: TaskSource) -> SweBenchExtTaskInstance:
+    def _load_task(cls, task_id: str, task_source: FolderTaskSource) -> SweBenchExtTaskInstance:
         """
         Load task data from the task source.
         
@@ -129,6 +122,7 @@ class SweBenchExtTask(BaseBenchmarkTask if EVAL_FRAMEWORK_AVAILABLE else object)
             SweBenchExtTaskInstance with loaded data
         """
         # Load test_metadata.json
+        
         try:
             metadata_content = task_source.get_task_file_contents(task_id, "test_metadata.json")
             metadata = json.loads(metadata_content)
@@ -156,17 +150,19 @@ class SweBenchExtTask(BaseBenchmarkTask if EVAL_FRAMEWORK_AVAILABLE else object)
             id=task_id,
             image_uri="",  # Will be set by get_default_image_uri
             language=metadata.get("language", "python"),
-            test_framework=metadata.get("test_framework", "pytest"),
+            test_framework=metadata.get("test_framework", metadata.get("language", "pytest")),
             test_command=metadata.get("test_command", ""),
             test_files=metadata.get("test_files", []),
             fail_to_pass=metadata.get("FAIL_TO_PASS", metadata.get("fail_to_pass", [])),
             pass_to_pass=metadata.get("PASS_TO_PASS", metadata.get("pass_to_pass", [])),
+            base_commit=metadata.get("base_commit", ""),
             problem_statement=problem_statement,
             prompt_statement=load_file("prompt_statement.md", problem_statement),
             test_patch=load_file("test.patch"),
             golden_patch=load_file("golden.patch"),
             requirements=requirements,
             interface=load_file("interface.md"),
+            knowledge_base=load_file("knowledge_base.md"),
         )
     
     # =========================================================================
@@ -176,8 +172,6 @@ class SweBenchExtTask(BaseBenchmarkTask if EVAL_FRAMEWORK_AVAILABLE else object)
     def get_default_image_uri(self) -> str:
         """Get Docker image URI for this task."""
         task_id = self.task_instance.id
-        if self.config:
-            return self.config.get_image_uri(task_id)
         return f"swe-bench-ext-{task_id}:latest"
     
     def get_golden_solution(self) -> str:
@@ -210,34 +204,48 @@ Make sure your changes are complete and the code compiles/runs correctly."""
         
         return prompt
     
-    def get_initial_user_prompt(self, tool_prompts: Optional[List[str]] = None) -> str:
-        """Generate initial user message with the problem."""
+    def get_initial_user_prompt(
+        self,
+        tool_prompts: Optional[List[str]] = None,
+    ) -> str:
+        """Generate initial user message with the problem.
+        
+        Args:
+            tool_prompts: Optional list of tool-specific prompts to append.
+            excluded_context: List of context sections to exclude.
+                Valid values: ["problem_statement", "requirements", "interface"].
+                
+        Returns:
+            Formatted prompt string with only the provided sections.
+        """
         inst = self.task_instance
-        problem_text = inst.prompt_statement or inst.problem_statement
+        excluded_context = self.config.excluded_context or []
         
-        prompt_parts = [
-            "## Problem Statement",
-            problem_text,
-        ]
+        parts = ["Please solve the following coding issue:\n"]
         
-        if inst.interface:
-            prompt_parts.extend(["", "## Interface", inst.interface])
+        # Problem statement (using prompt_statement which may be customized)
+        if inst.problem_statement and "problem_statement" not in excluded_context:
+            parts.append(f"## Problem Description\n{inst.problem_statement}\n")
         
-        if inst.requirements:
-            prompt_parts.extend(["", "## Requirements"])
-            for req in inst.requirements:
-                prompt_parts.append(f"- {req}")
+        # User request (always included)
+        parts.append(f"## User Request\n{inst.prompt_statement}\n")
         
-        if inst.test_files:
-            prompt_parts.extend([
-                "",
-                "## Test Files (for reference)",
-                "The following test files will be used to verify your solution:",
-            ])
-            for tf in inst.test_files:
-                prompt_parts.append(f"- {tf}")
+        # Requirements (formatted as numbered list)
+        if inst.requirements and "requirements" not in excluded_context:
+            requirements_text = "\n".join(
+                [f"{i + 1}. {req}" for i, req in enumerate(inst.requirements)]
+            )
+            parts.append(f"## Requirements\n{requirements_text}\n")
         
-        prompt = "\n".join(prompt_parts)
+        # Interface specifications
+        if inst.interface and "interface" not in excluded_context:
+            parts.append(f"## Interface Specifications\n{inst.interface}\n")
+        
+        parts.append(
+            "Please implement a solution that satisfies all the requirements above."
+        )
+        
+        prompt = "\n".join(parts)
         
         # Append tool prompts if provided
         if tool_prompts:
@@ -246,90 +254,518 @@ Make sure your changes are complete and the code compiles/runs correctly."""
         return prompt
     
     def generate_setup_script(self) -> Union[str, List[str]]:
-        """Generate setup scripts (run before agent starts)."""
-        return [
-            f"cd {self.workdir}",
-            "git status",
-            "git log --oneline -3",
+        """Generate setup scripts (run before agent starts).
+        
+        This script:
+        1. Marks workspace as safe directory for git
+        2. Initializes a git repo if it doesn't exist
+        3. Configures git user if not set (required for commits)
+        4. Creates an initial commit if no commits exist
+        5. Removes excluded context files from /workspace/ if configured
+        """
+        workdir = self.workdir
+        
+        # Get git init script and extract the body (skip shebang and set -e lines)
+        git_init_script = generate_git_init_script(workdir)
+        git_init_body = '\n'.join(git_init_script.split('\n')[2:])
+        
+        script_parts = [
+            "#!/bin/bash",
+            "set -e",
+            "",
+            "# Mark workspace as safe directory",
+            f"git config --global --add safe.directory {workdir}",
+            git_init_body,
         ]
+        
+        # Remove excluded context files from /workspace/
+        # This prevents the agent from accessing these files directly
+        excluded_context = self.config.excluded_context if self.config else []
+        if excluded_context:
+            # Mapping from context names to file names
+            context_to_file = {
+                "problem_statement": "problem_statement.md",
+                "requirements": "requirements.json",
+                "interface": "interface.md",
+                "knowledge_base": "knowledge_base.md",
+            }
+            
+            script_parts.append("")
+            script_parts.append("# Remove excluded context files from /workspace/")
+            
+            for context_name in excluded_context:
+                if context_name in context_to_file:
+                    filename = context_to_file[context_name]
+                    script_parts.append(f'rm -f "/workspace/{filename}"')
+        
+        return "\n".join(script_parts)
     
-    def generate_grading_setup_script(self) -> Union[str, List[str]]:
-        """Generate grading setup scripts (apply test patch)."""
+    def generate_grading_setup_script(
+        self,
+        apply_golden_patch: bool = False,
+    ) -> Union[str, List[str]]:
+        """Generate grading setup scripts.
+        
+        This script:
+        1. Configures git and marks the directory as safe
+        2. Resets test files to the base commit state (or initial commit if base_commit unavailable)
+        3. Creates the test patch file from embedded base64 content
+        4. Optionally applies the golden patch (for golden patch testing mode)
+        
+        Args:
+            apply_golden_patch: If True, also apply the golden patch before tests.
+        """
         inst = self.task_instance
+        workdir = self.workdir
         
-        if not inst.test_patch:
-            return [f"cd {self.workdir}", "echo 'No test patch to apply'"]
-        
-        # Encode test patch to avoid shell escaping issues
-        encoded_patch = base64.b64encode(inst.test_patch.encode()).decode()
-        
-        return [
-            f"cd {self.workdir}",
-            f"echo '{encoded_patch}' | base64 -d | git apply -v --allow-empty || echo 'Patch may already be applied'",
+        script_parts = [
+            "#!/bin/bash",
+            "set -e",
+            "",
+            "# Configure git",
+            'git config --global user.email "grader@swebench.ext"',
+            'git config --global user.name "Grader"',
+            f"git config --global --add safe.directory {workdir}",
+            "",
+            f"cd {workdir}",
+            "",
+            "# Determine which commit to use for resetting test files",
+            "# Prefer base_commit if provided and valid, otherwise use initial commit",
         ]
+        
+        # Add base commit determination logic
+        if inst.base_commit:
+            script_parts.append(f'''
+BASE_COMMIT="{inst.base_commit}"
+if git cat-file -e "$BASE_COMMIT^{{commit}}" 2>/dev/null; then
+    reset_commit="$BASE_COMMIT"
+    echo "Using base commit: $reset_commit"
+else
+    reset_commit=$(git rev-list --max-parents=0 HEAD)
+    echo "Base commit not in history, using initial commit: $reset_commit"
+fi
+''')
+        else:
+            script_parts.append('''
+reset_commit=$(git rev-list --max-parents=0 HEAD)
+echo "No base commit specified, using initial commit: $reset_commit"
+''')
+        
+        # Reset test files to the determined commit state (undo any agent modifications to test files)
+        if inst.test_files:
+            script_parts.append("# Reset test files to the determined commit state")
+            script_parts.append("# This ensures we evaluate the agent's code changes, not test modifications")
+            
+            for test_file in inst.test_files:
+                # Check if file existed in reset commit; if so restore it, else delete it
+                script_parts.append(f'''
+if git cat-file -e "$reset_commit:{test_file}" 2>/dev/null; then
+    git checkout "$reset_commit" -- "{test_file}" || true
+else
+    # File didn't exist in reset commit, delete it if it exists now
+    if [ -f "{test_file}" ]; then
+        rm "{test_file}"
+    fi
+fi''')
+            
+            script_parts.append("")
+        
+        # Apply golden patch if requested (for golden patch testing mode)
+        if apply_golden_patch and inst.golden_patch:
+            script_parts.append("# Apply golden patch")
+            script_parts.append('echo "=== Applying golden patch ==="')
+            # Use generate_git_apply_script and extract body (skip shebang and set -e)
+            golden_apply_script = generate_git_apply_script(inst.golden_patch, workdir)
+            golden_apply_body = '\n'.join(golden_apply_script.split('\n')[2:])
+            script_parts.append(golden_apply_body)
+            script_parts.append('echo "Golden patch applied successfully"')
+        
+        # Create and apply test patch
+        if inst.test_patch:
+            script_parts.append("# Apply test patch")
+            script_parts.append('echo "=== Applying test patch ==="')
+            # Use generate_git_apply_script and extract body (skip shebang and set -e)
+            test_apply_script = generate_git_apply_script(inst.test_patch, workdir)
+            test_apply_lines = test_apply_script.split('\n')[2:]  # Skip shebang and set -e
+            # Modify the git apply line to allow partial success (|| true)
+            test_apply_lines = [
+                line + ' || true' if 'git apply' in line else line
+                for line in test_apply_lines
+            ]
+            script_parts.append('\n'.join(test_apply_lines))
+            script_parts.append('echo "Test patch applied"')
+        else:
+            script_parts.append("# No test patch to apply")
+            script_parts.append('echo "No test patch to apply"')
+        
+        return "\n".join(script_parts)
+    
     
     def generate_test_run_script(self) -> Union[str, List[str]]:
-        """Generate test execution script."""
+        """Generate test execution script.
+        
+        This script:
+        1. Changes to the working directory
+        2. Creates necessary output directories
+        3. Runs the test command with appropriate output flags
+        4. If a result file is generated, outputs it to stdout with markers
+        
+        The script ensures that structured test output (JSON, XML, etc.) is available
+        in stdout/stderr for parsing, even if the framework writes to a file.
+        """
         inst = self.task_instance
+        workdir = self.workdir
         
-        if inst.test_command:
-            return f"cd {self.workdir} && {inst.test_command}"
+        # Get the test command with output flags
+        base_command = inst.test_command
+        if not base_command:
+            # Default commands per test framework
+            default_commands = {
+                "pytest": "pytest -xvs",
+                "go": "go test -v ./...",
+                "jest": "npm test",
+                "vitest": "npm test",
+                "cargo": "cargo test",
+                "cargo-nextest": "cargo nextest run",
+                "maven": "mvn test",
+                "gradle": "gradle test",
+            }
+            base_command = default_commands.get(inst.test_framework, "echo 'No test command specified'")
         
-        # Default commands per test framework
-        default_commands = {
-            "pytest": "pytest -xvs",
-            "go": "go test -v ./...",
-            "jest": "npm test",
-            "vitest": "npm test",
-            "cargo": "cargo test",
-            "maven": "mvn test",
-            "gradle": "gradle test",
+        test_cmd = get_test_command_with_output(base_command, inst.test_framework)
+        
+        # Get framework config for result file location
+        config = get_framework_config(inst.test_framework, base_command)
+        result_file = config.get("result_file")
+        
+        script_parts = [
+            "#!/bin/bash",
+            "# Don't use set -e - we want to capture test failures, not abort on them",
+            "set -o pipefail",
+            "",
+            f"cd {workdir}",
+            "",
+            "# Create test results directory",
+            "mkdir -p /workspace/test-results",
+            "",
+            "# Markers for parsing (helps extract test output from other stdout content)",
+            'echo "<<<SWE_BENCH_EXT_TEST_OUTPUT_START>>>"',
+            "",
+            "# Run tests",
+            test_cmd,
+            "test_exit_code=$?",
+            "",
+        ]
+        
+        # If there's a result file, output its contents for parsing
+        if result_file:
+            if "*" in result_file:
+                # Handle glob patterns (e.g., Maven/JUnit XMLs)
+                script_parts.append(f'''
+# Output result files (glob pattern: {result_file})
+echo "<<<SWE_BENCH_EXT_RESULT_FILE_START>>>"
+for f in {result_file}; do
+    if [ -f "$f" ]; then
+        echo "=== FILE: $f ==="
+        cat "$f"
+        echo ""
+    fi
+done 2>/dev/null || true
+echo "<<<SWE_BENCH_EXT_RESULT_FILE_END>>>"
+''')
+            else:
+                # Single result file
+                script_parts.append(f'''
+# Output result file: {result_file}
+echo "<<<SWE_BENCH_EXT_RESULT_FILE_START>>>"
+if [ -f "{result_file}" ]; then
+    cat "{result_file}"
+fi
+echo "<<<SWE_BENCH_EXT_RESULT_FILE_END>>>"
+''')
+        
+        script_parts.append('''
+echo "<<<SWE_BENCH_EXT_TEST_OUTPUT_END>>>"
+
+# Exit with test exit code
+exit $test_exit_code
+''')
+        
+        return "\n".join(script_parts)
+    
+    def parse_test_results(self, test_output: str) -> TestSummary:
+        """Parse test output into structured results.
+        
+        This method:
+        1. Extracts structured test output from markers if present
+        2. Uses the appropriate parser for the test framework
+        3. Normalizes test IDs for stable matching
+        4. Matches against expected FAIL_TO_PASS and PASS_TO_PASS lists
+        5. Computes overall pass/fail and score
+        
+        Args:
+            test_output: Raw test output from running the test script.
+            
+        Returns:
+            TestSummary with parsed results, matching, and computed score.
+        """
+        inst = self.task_instance
+        test_framework = inst.test_framework
+        
+        # Normalize expected test IDs
+        fail_to_pass = [normalize_test_id(tid, test_framework) for tid in inst.fail_to_pass]
+        pass_to_pass = [normalize_test_id(tid, test_framework) for tid in inst.pass_to_pass]
+        
+        # Parse test output using the common parsing function
+        parsed_results = self._parse_raw_test_output(test_output, test_framework)
+        
+        # Handle case where parsing failed completely
+        if parsed_results is None:
+            parsed_results = {}
+        
+        # Handle synthetic build/compile tests
+        # If a test ID ends with ::build or ::compile and is NOT in parsed_results,
+        # it means the build/compilation SUCCEEDED (failures would be reported)
+        for tid in fail_to_pass + pass_to_pass:
+            if (tid.endswith("::build") or tid.endswith("::compile")) and tid not in parsed_results:
+                parsed_results[tid] = "PASSED"
+        
+        # Identify packages that failed to build (package-level failures without ::)
+        build_failed_packages = {
+            pkg
+            for pkg, status in parsed_results.items()
+            if status == "FAILED" and "::" not in pkg
         }
         
-        cmd = default_commands.get(inst.test_framework, "echo 'No test command specified'")
-        return f"cd {self.workdir} && {cmd}"
-    
-    def parse_test_results(self, test_output: str) -> "TestSummary":
-        """Parse test output into structured results."""
-        inst = self.task_instance
-        
-        if EVAL_FRAMEWORK_AVAILABLE:
-            return create_test_summary_from_output(
-                test_output=test_output,
-                framework=inst.test_framework,
-                fail_to_pass=inst.fail_to_pass,
-                pass_to_pass=inst.pass_to_pass,
+        # Match FAIL_TO_PASS tests
+        fail_to_pass_results = {}
+        for test_id in fail_to_pass:
+            fail_to_pass_results[test_id] = self._match_test_with_fuzzy(
+                test_id, parsed_results, build_failed_packages
             )
-        else:
-            # Fallback for standalone testing
-            return self._fallback_parse_results(test_output)
+        
+        # Match PASS_TO_PASS tests
+        pass_to_pass_results = {}
+        for test_id in pass_to_pass:
+            pass_to_pass_results[test_id] = self._match_test_with_fuzzy(
+                test_id, parsed_results, build_failed_packages
+            )
+        
+        # Compute pass/fail
+        all_f2p_passed = all(v == "PASSED" for v in fail_to_pass_results.values())
+        all_p2p_passed = all(v == "PASSED" for v in pass_to_pass_results.values())
+        passed = all_f2p_passed and all_p2p_passed
+        
+        # Convert parsed results to TestStatus enum
+        test_statuses = {}
+        for test_id, status in parsed_results.items():
+            if status == "PASSED":
+                test_statuses[test_id] = TestStatus.PASS
+            elif status == "FAILED":
+                test_statuses[test_id] = TestStatus.FAIL
+            elif status == "SKIPPED":
+                test_statuses[test_id] = TestStatus.SKIP
+            else:
+                test_statuses[test_id] = TestStatus.UNKNOWN
+        
+        return TestSummary(
+            score=1.0 if passed else 0.0,
+            test_statuses=test_statuses,
+            metadata={
+                "fail_to_pass_results": fail_to_pass_results,
+                "pass_to_pass_results": pass_to_pass_results,
+                "f2p_passed": sum(1 for v in fail_to_pass_results.values() if v == "PASSED"),
+                "f2p_total": len(fail_to_pass_results),
+                "p2p_passed": sum(1 for v in pass_to_pass_results.values() if v == "PASSED"),
+                "p2p_total": len(pass_to_pass_results),
+            },
+        )
     
-    def _fallback_parse_results(self, test_output: str) -> Dict[str, Any]:
-        """Fallback parser when eval-framework not available."""
-        output_lower = test_output.lower()
+    def _extract_result_file_content(self, test_output: str) -> Optional[str]:
+        """Extract result file content from test output if markers are present.
         
-        has_failures = any(
-            indicator in output_lower
-            for indicator in ["fail", "error", "failed", "errors"]
-        )
+        Args:
+            test_output: Full test output including potential result file content.
+            
+        Returns:
+            Extracted result file content, or None if not found.
+        """
+        start_marker = "<<<SWE_BENCH_EXT_RESULT_FILE_START>>>"
+        end_marker = "<<<SWE_BENCH_EXT_RESULT_FILE_END>>>"
         
-        has_passes = any(
-            indicator in output_lower
-            for indicator in ["pass", "passed", "ok", "success"]
-        )
+        if start_marker in test_output and end_marker in test_output:
+            start_idx = test_output.find(start_marker) + len(start_marker)
+            end_idx = test_output.find(end_marker)
+            if start_idx < end_idx:
+                return test_output[start_idx:end_idx].strip()
         
-        if has_failures:
-            score = 0.0
-        elif has_passes:
-            score = 1.0
+        return None
+    
+    def _parse_raw_test_output(self, test_output: str, test_framework: str) -> Optional[Dict[str, str]]:
+        """Parse raw test output and return normalized test results.
+        
+        This function:
+        1. Extracts structured test output from markers if present
+        2. Uses the appropriate parser for the test framework
+        3. Falls back to parsing full output if result file parsing fails
+        4. Normalizes test IDs to remove unstable runtime prefixes
+        
+        Args:
+            test_output: Raw test output string.
+            test_framework: Test framework name (e.g., 'pytest', 'go', 'jest').
+            
+        Returns:
+            Dict of normalized test_id -> status, or None if parsing failed completely.
+        """
+        # Try to extract result file content from markers
+        result_file_content = self._extract_result_file_content(test_output)
+        
+        # Parse test output using appropriate parser
+        if result_file_content:
+            parsed_results = parse_test_output(result_file_content, test_framework)
+            # Fallback to full output if result file parsing failed
+            if not parsed_results:
+                parsed_results = parse_test_output(test_output, test_framework)
         else:
-            score = 0.0
+            parsed_results = parse_test_output(test_output, test_framework)
         
-        return {
-            "score": score,
-            "test_statuses": {},
-            "raw_output": test_output[:1000],
-        }
+        # Normalize test IDs to remove unstable runtime prefixes
+        if parsed_results:
+            parsed_results = {
+                normalize_test_id(tid, test_framework): status
+                for tid, status in parsed_results.items()
+            }
+        
+        return parsed_results
+    
+    def _match_test_with_fuzzy(
+        self,
+        test_id: str,
+        parsed_results: Dict[str, str],
+        build_failed_packages: set,
+    ) -> str:
+        """Try to match a test ID against parsed results, using fuzzy matching if needed.
+        
+        Args:
+            test_id: The expected test ID to find.
+            parsed_results: Dict of parsed test IDs to statuses.
+            build_failed_packages: Set of packages that failed to build.
+            
+        Returns:
+            Test status: "PASSED", "FAILED", "SKIPPED", or "NOT_FOUND".
+        """
+        # Direct match
+        if test_id in parsed_results:
+            return parsed_results[test_id]
+        
+        # Try normalized matching (handles different delimiters, file extensions, etc.)
+        normalized_test_id = normalize_test_id(test_id)
+        for parsed_id, status in parsed_results.items():
+            if normalize_test_id(parsed_id) == normalized_test_id:
+                return status
+        
+        # Try fuzzy matching for tests with path::name format
+        if "::" in test_id:
+            file_path, test_name = test_id.rsplit("::", 1)
+            
+            # For parameterized tests, extract base name before brackets
+            base_test_name = test_name.split("[")[0] if "[" in test_name else test_name
+            
+            # Normalize file_path for comparison
+            normalized_file_path = normalize_test_id(file_path)
+            
+            # Look for tests in same file with similar names
+            for parsed_id in parsed_results.keys():
+                if "::" in parsed_id:
+                    parsed_file_path, parsed_test_name = parsed_id.rsplit("::", 1)
+                    
+                    # Check if file paths match (with normalization)
+                    if normalize_test_id(parsed_file_path) == normalized_file_path:
+                        parsed_base_name = (
+                            parsed_test_name.split("[")[0]
+                            if "[" in parsed_test_name
+                            else parsed_test_name
+                        )
+                        
+                        # Exact match on base name (handles parameterized tests)
+                        if base_test_name == parsed_base_name:
+                            return parsed_results[parsed_id]
+                        
+                        # Fuzzy match on words for renamed tests
+                        test_words = set(test_name.lower().split())
+                        parsed_words = set(parsed_test_name.lower().split())
+                        if len(test_words & parsed_words) >= len(test_words) * 0.7:
+                            return parsed_results[parsed_id]
+        
+        # Check if the test's package failed to build
+        test_package = test_id.split("::")[0] if "::" in test_id else test_id
+        if test_package in build_failed_packages:
+            return "FAILED"
+        
+        return "NOT_FOUND"
+    
+    def generate_grading_explanation(
+        self,
+        test_summary: TestSummary,
+        test_output: str = "",
+        max_output_length: int = 100000,
+    ) -> str:
+        """Generate a human-readable explanation of test results.
+        
+        Args:
+            test_summary: TestSummary from parse_test_results.
+            test_output: Optional raw test output to include.
+            max_output_length: Maximum length of test output to include.
+            
+        Returns:
+            Formatted explanation string.
+        """
+        metadata = test_summary.metadata
+        f2p_passed = metadata.get("f2p_passed", 0)
+        f2p_total = metadata.get("f2p_total", 0)
+        p2p_passed = metadata.get("p2p_passed", 0)
+        p2p_total = metadata.get("p2p_total", 0)
+        fail_to_pass_results = metadata.get("fail_to_pass_results", {})
+        pass_to_pass_results = metadata.get("pass_to_pass_results", {})
+        
+        parts = [
+            "Test Results:",
+            f"  FAIL_TO_PASS: {f2p_passed}/{f2p_total} passed",
+            f"  PASS_TO_PASS: {p2p_passed}/{p2p_total} passed",
+            f"  Total parsed tests: {len(test_summary.test_statuses)}",
+        ]
+        
+        # Get failed tests
+        failed_f2p = [t for t, v in fail_to_pass_results.items() if v != "PASSED"]
+        failed_p2p = [t for t, v in pass_to_pass_results.items() if v != "PASSED"]
+        
+        # Show parsed tests when there are failures (for debugging)
+        if (failed_f2p or failed_p2p) and len(test_summary.test_statuses) <= 100:
+            parts.append("\nParsed test IDs:")
+            for test_id in sorted(test_summary.test_statuses.keys()):
+                parts.append(f"  {test_id}: {test_summary.test_statuses[test_id].value}")
+        
+        if failed_f2p:
+            parts.append(f"\nFailed FAIL_TO_PASS tests ({len(failed_f2p)}):")
+            for test in failed_f2p[:10]:
+                parts.append(f"  - {test}: {fail_to_pass_results[test]}")
+            if len(failed_f2p) > 10:
+                parts.append(f"  ... and {len(failed_f2p) - 10} more")
+        
+        if failed_p2p:
+            parts.append(f"\nFailed PASS_TO_PASS tests ({len(failed_p2p)}):")
+            for test in failed_p2p[:10]:
+                parts.append(f"  - {test}: {pass_to_pass_results[test]}")
+            if len(failed_p2p) > 10:
+                parts.append(f"  ... and {len(failed_p2p) - 10} more")
+        
+        if test_output:
+            truncated = test_output[:max_output_length]
+            if len(test_output) > max_output_length:
+                truncated += "\n... (output truncated)"
+            parts.append(f"\nTest output:\n{truncated}")
+        
+        return "\n".join(parts)
     
     # =========================================================================
     # Metadata
@@ -342,12 +778,18 @@ Make sure your changes are complete and the code compiles/runs correctly."""
             "task_id": inst.id,
             "language": inst.language,
             "test_framework": inst.test_framework,
+            "test_command": inst.test_command,
             "num_fail_to_pass": len(inst.fail_to_pass),
             "num_pass_to_pass": len(inst.pass_to_pass),
             "num_test_files": len(inst.test_files),
+            "test_files": inst.test_files,
             "has_golden_patch": bool(inst.golden_patch),
             "has_interface": bool(inst.interface),
             "has_requirements": bool(inst.requirements),
+            "has_knowledge_base": bool(inst.knowledge_base),
+            "base_commit": inst.base_commit,
+            "FAIL_TO_PASS": inst.fail_to_pass,
+            "PASS_TO_PASS": inst.pass_to_pass,
         }
     
     def __repr__(self) -> str:

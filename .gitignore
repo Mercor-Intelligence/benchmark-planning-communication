@@ -102,3 +102,11 @@ venv.bak/
 .DS_Store
 Thumbs.db
 logs/
+tasks/
+config/task_source_config.yaml
+config/task_source_config.json
+config/benchmark_task_config.yaml 
+config/benchmark_task_config.json
+
+output.log
+PR.md
