@@ -792,6 +792,48 @@ exit $test_exit_code
             "PASS_TO_PASS": inst.pass_to_pass,
         }
     
+    def load_rubric(self, task_source: "TaskSource") -> "Rubric":
+        """
+        Load rubric from task's rubric/rubric.json file.
+        
+        Args:
+            task_source: TaskSource to load rubric from
+            
+        Returns:
+            Rubric object (framework format)
+            
+        Example:
+            task = SweBenchExtTask.from_id("task-id", task_source)
+            rubric = task.load_rubric(task_source)
+        """
+        from .rubric_utils import convert_harness_rubric_to_framework
+        
+        try:
+            rubric_content = task_source.get_task_file_contents(
+                self.task_instance.id,
+                "rubric/rubric.json"
+            )
+            rubric_dict = json.loads(rubric_content)
+            return convert_harness_rubric_to_framework(rubric_dict)
+        except Exception as e:
+            raise ValueError(f"Failed to load rubric for task {self.task_instance.id}: {e}")
+    
+    def get_grading_guidelines(self) -> str:
+        """
+        Get grading guidelines for SWE-Bench-Ext tasks.
+        
+        Returns embedded guidelines (can be overridden to load from file).
+        """
+        return """
+# SWE-Bench Grading Guidelines
+
+- Focus on code changes (git diff) as primary evidence
+- Passing tests strongly indicate correctness
+- Give credit for reasonable attempts even with minor issues
+- Be strict about missing functionality
+- Style issues should not heavily penalize functional solutions
+        """.strip()
+    
     def __repr__(self) -> str:
         inst = self.task_instance
         return (

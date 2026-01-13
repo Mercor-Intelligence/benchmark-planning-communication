@@ -1,8 +1,19 @@
 # benchmark-swe-bench-ext
 
+SWE-Bench Extended benchmark task implementation for [eval-framework](https://github.com/Mercor-Intelligence/eval-framework).
+
+## Features
+
+- **Task Loading** - Load tasks from local directories or S3  
+- **Prompt Generation** - System and user prompts for agents  
+- **Test Execution** - Setup and run test scripts  
+- **Result Parsing** - Parse test output into structured summaries  
+- **Rubric Grading** - LLM-based evaluation against structured rubrics
 SWE-Bench Extended benchmark task implementation for [lighthouse](https://github.com/Mercor-Intelligence/lighthouse).
 
 ## Setup
+
+### Basic Installation
 
 ```bash
 git clone --recursive https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext.git
@@ -10,6 +21,9 @@ cd benchmark-swe-bench-ext
 pip install -e .
 ```
 
+## Usage
+
+### Basic Task Usage
 ## Task Directory Structure
 
 By default, tasks are loaded from the `tasks/` directory (configured in `config/task_source_config.yaml`). Each task should be in its own subdirectory:
@@ -200,11 +214,74 @@ print(f"Score: {summary.score}")
 print(f"Passed: {summary.metadata['f2p_passed']}/{summary.metadata['f2p_total']}")
 ```
 
+### Rubric-Based Grading
+
+```python
+from swe_bench_ext import SweBenchExtTask, SweBenchExtRubricGrader
+from task_source.local_folder import LocalFolderTaskSource
+
+# Load task and rubric
+task_source = LocalFolderTaskSource(path="/path/to/tasks")
+task = SweBenchExtTask.from_id("libgeos-geos-1182-1239", task_source)
+rubric = task.load_rubric(task_source)
+
+# Create grader with OpenAI
+grader = SweBenchExtRubricGrader(
+    rubric=rubric,
+    model_name="openai/gpt-4o-mini",
+    api_key="your-api-key",
+)
+
+# Or with Anthropic
+grader = SweBenchExtRubricGrader(
+    rubric=rubric,
+    model_name="anthropic/claude-3-5-sonnet-20241022",
+    api_key="your-api-key",
+)
+
+# Grade solution
+result = await grader.grade(
+    solution="Fixed the bug by...",
+    git_diff=git_diff,
+    problem_statement=task.problem_statement,
+    trajectory={"transcript": agent_conversation},
+)
+
+print(f"Total Score: {result.total_score}")
+print(f"Explanation:\n{result.explanation}")
+
+# Access individual criteria scores
+for score in result.criteria_scores:
+    print(f"{score.criteria.criteria_id}: {score.score} - {score.explanation}")
+```
+
+## Rubric Format
+
+Rubrics are organized by category (functional, robustness, style, etc.):
+
+```python
+# Access rubric categories
+categories = rubric.get_all_categories()  # ['functional', 'robustness', 'style']
+
+# Get criteria by category
+functional_criteria = rubric.get_criteria_by_category('functional')
+
+# Supports both numeric weights and "major"/"minor" labels
+# major = 1.0, minor = 0.5
+```
+
+
 ## Project Structure
 
 ```
 benchmark-swe-bench-ext/
 ├── swe_bench_ext/
+│   ├── __init__.py           # Package exports
+│   ├── task.py               # SweBenchExtTask
+│   ├── config.py             # Config & Options
+│   ├── rubric_grader.py      # LLM-based rubric grader
+│   └── rubric_utils.py       # Rubric format conversion
+├── eval-framework/           # Git submodule
 │   ├── __init__.py         # Package exports
 │   ├── task.py             # SweBenchExtTask implementation
 │   └── config.py           # SweBenchExtConfig
@@ -217,6 +294,16 @@ benchmark-swe-bench-ext/
 ├── pyproject.toml
 └── README.md
 ```
+
+## Dependencies
+
+- **eval-framework** (submodule) - Core abstractions
+- **openai>=1.0.0** (optional) - For OpenAI grading
+- **anthropic>=0.18.0** (optional) - For Anthropic grading
+
+## License
+
+See [LICENSE](LICENSE) file for details.
 
 ## Common Commands
 

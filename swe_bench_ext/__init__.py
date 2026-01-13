@@ -25,11 +25,19 @@ Usage:
 
 from .task import SweBenchExtTask
 from .config import SweBenchExtConfig, SweBenchExtOptions
+from .rubric_grader import SweBenchExtRubricGrader
+from .rubric_utils import (
+    convert_harness_rubric_to_framework,
+    convert_framework_rubric_to_harness,
+)
 
 __all__ = [
     "SweBenchExtTask",
     "SweBenchExtConfig",
     "SweBenchExtOptions",
+    "SweBenchExtRubricGrader",
+    "convert_harness_rubric_to_framework",
+    "convert_framework_rubric_to_harness",
 ]
 
 __version__ = "0.1.0"
