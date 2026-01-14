@@ -1,0 +1,4 @@
+source_type: local_folder
+config:
+  path: tasks/
+  build_image_if_not_exists: true
