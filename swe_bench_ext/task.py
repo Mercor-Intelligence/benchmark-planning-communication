@@ -15,21 +15,21 @@ from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
 from pydantic import Field
 
-from lighthouse.core.benchmark_tasks.base_benchmark_task import (
+from core.benchmark_tasks.base_benchmark_task import (
     BaseBenchmarkTask,
     BaseTaskInstance,
 )
-from lighthouse.core.benchmark_tasks.models import TestSummary, TestStatus
-from lighthouse.core.benchmark_tasks.task_source import FolderTaskSource
-from lighthouse.core.benchmark_tasks.benchmark_config import BenchmarkConfig
-from lighthouse.common.parsing import (
+from core.benchmark_tasks.models import TestSummary, TestStatus
+from core.benchmark_tasks.task_source import FolderTaskSource
+from core.benchmark_tasks.benchmark_config import BenchmarkConfig
+from common.parsing import (
     parse_test_output,
     normalize_test_id,
     get_framework_config,
     get_test_command_with_output,
 )
-from lighthouse.common.utils.cmd_generation import generate_git_init_script, generate_git_apply_script
-from lighthouse.core.registry import benchmark_task
+from common.utils.cmd_generation import generate_git_init_script, generate_git_apply_script
+from core.registry import benchmark_task
     
 from .config import SweBenchExtConfig
 
@@ -170,8 +170,20 @@ class SweBenchExtTask(BaseBenchmarkTask):
     # =========================================================================
     
     def get_default_image_uri(self) -> str:
-        """Get Docker image URI for this task."""
+        """Get Docker image URI for this task.
+        
+        Priority:
+        1. If task_instance.image_uri is already set (by from_id with image_uri_override), use it
+        2. If config has image_uri_template, use config.get_image_uri()
+        3. Otherwise, use default local image name
+        """
+        # Check if image_uri was already set (e.g., via image_uri_override in from_id)
+        if self.task_instance.image_uri:
+            return self.task_instance.image_uri
+        
         task_id = self.task_instance.id
+        if self.config:
+            return self.config.get_image_uri(task_id)
         return f"swe-bench-ext-{task_id}:latest"
     
     def get_golden_solution(self) -> str:

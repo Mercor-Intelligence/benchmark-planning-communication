@@ -24,7 +24,7 @@ Usage:
 """
 
 from .task import SweBenchExtTask
-from .config import SweBenchExtConfig, SweBenchExtOptions
+from .config import SweBenchExtConfig
 from .rubric_grader import SweBenchExtRubricGrader
 from .rubric_utils import (
     convert_harness_rubric_to_framework,
@@ -34,7 +34,7 @@ from .rubric_utils import (
 __all__ = [
     "SweBenchExtTask",
     "SweBenchExtConfig",
-    "SweBenchExtOptions",
+    
     "SweBenchExtRubricGrader",
     "convert_harness_rubric_to_framework",
     "convert_framework_rubric_to_harness",
