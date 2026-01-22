@@ -49,9 +49,9 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
     
     async def _call_llm(self, prompt: str) -> str:
         """
-        Call LLM using OpenAI or Anthropic.
+        Call LLM using OpenAI, Anthropic, or Google.
         
-        Supports: openai/*, anthropic/*
+        Supports: openai/*, anthropic/*, google/*, gemini/*
         """
         if not self.model_name:
             raise ValueError("model_name not set")
@@ -62,8 +62,10 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
             return await self._call_openai(prompt)
         elif provider == "anthropic":
             return await self._call_anthropic(prompt)
+        elif provider in ("google", "gemini"):
+            return await self._call_google(prompt)
         else:
-            raise ValueError(f"Unsupported provider: {provider}")
+            raise ValueError(f"Unsupported provider: {provider}. Supported: openai, anthropic, google")
     
     async def _call_openai(self, prompt: str) -> str:
         """Call OpenAI API."""
@@ -76,6 +78,7 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=self.temperature,
+            # No max_tokens - uses model-specific default maximum
         )
         
         return response.choices[0].message.content
@@ -91,10 +94,62 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=self.temperature,
-            max_tokens=4096,
+            max_tokens=8192,  # Required for Claude, using safe default that works for all models
         )
         
         return response.content[0].text
+    
+    async def _call_google(self, prompt: str) -> str:
+        """Call Google Gemini API."""
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise ImportError(
+                "google-genai is required for Google/Gemini models. "
+                "Install with: pip install google-genai"
+            )
+        
+        # Initialize client
+        client = genai.Client(api_key=self.api_key)
+        model = self.model_name.split("/", 1)[1]  # Remove "google/"/"gemini/" prefix
+        
+        # Create request without max_output_tokens - uses model default
+        response = await client.aio.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=self.temperature,
+                # No max_output_tokens - uses model-specific default maximum (up to 65K for Gemini)
+            ),
+        )
+        
+        # DEBUG: Log response structure
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"[GEMINI_DEBUG] response.text exists: {hasattr(response, 'text')}")
+        logger.warning(f"[GEMINI_DEBUG] response.text value: {response.text if hasattr(response, 'text') else 'N/A'}")
+        logger.warning(f"[GEMINI_DEBUG] response.candidates exists: {hasattr(response, 'candidates')}")
+        if hasattr(response, 'candidates') and response.candidates:
+            logger.warning(f"[GEMINI_DEBUG] candidates count: {len(response.candidates)}")
+            if len(response.candidates) > 0:
+                cand = response.candidates[0]
+                logger.warning(f"[GEMINI_DEBUG] candidate.content exists: {hasattr(cand, 'content')}")
+                logger.warning(f"[GEMINI_DEBUG] candidate.finish_reason: {getattr(cand, 'finish_reason', 'N/A')}")
+                if hasattr(cand, 'content'):
+                    logger.warning(f"[GEMINI_DEBUG] content.parts exists: {hasattr(cand.content, 'parts')}")
+                    if hasattr(cand.content, 'parts'):
+                        logger.warning(f"[GEMINI_DEBUG] parts count: {len(cand.content.parts)}")
+        
+        # Extract text from response
+        if response.text:
+            return response.text
+        elif response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                return candidate.content.parts[0].text
+        
+        raise ValueError("No text content in Gemini response")
     
     def _build_prompt(
         self,
@@ -135,10 +190,10 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
             sections.append(git_diff)
             sections.append("```")
         
-        # Add trajectory
+        # Add trajectory (increased limit to provide more context)
         if trajectory:
             sections.append("\n## Agent's Work History")
-            sections.append(trajectory[:5000])  # Limit to prevent token overflow
+            sections.append(trajectory[:30000])  # ~7500 tokens, enough for full context
         
         # Instructions
         sections.append("\n## Your Task")

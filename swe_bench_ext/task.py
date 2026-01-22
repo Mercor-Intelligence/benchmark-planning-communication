@@ -165,6 +165,75 @@ class SweBenchExtTask(BaseBenchmarkTask):
             knowledge_base=load_file("knowledge_base.md"),
         )
     
+    @classmethod
+    def from_id(
+        cls,
+        task_id: str,
+        task_source: FolderTaskSource,
+        image_uri_override: Optional[str] = None,
+        **config_overrides,
+    ) -> "SweBenchExtTask":
+        """
+        Get the task for a given task ID with rubric grader attached.
+        
+        Overrides base class to attach SweBenchExtRubricGrader.
+        
+        Args:
+            task_id: The unique identifier for the task
+            task_source: The task source to load from
+            image_uri_override: Optional image URI override
+            **config_overrides: Optional config field overrides
+            
+        Returns:
+            Initialized task instance with rubric grader attached
+        """
+        # Call parent implementation
+        task_instance = cls._load_task(task_id, task_source)
+        task = cls(task_instance=task_instance, task_source=task_source, **config_overrides)
+
+        if not task_instance.image_uri:
+            task_instance.image_uri = image_uri_override if image_uri_override else task.get_default_image_uri()
+
+        task_source.build_docker_image_if_not_exists(task_id, task_instance.image_uri)
+        
+        # Attach rubric grader if rubric exists
+        # Note: We only create the grader instance here. The actual rubric loading
+        # happens lazily when init_rubric_grader() is called from the harness.
+        try:
+            from .rubric_grader import SweBenchExtRubricGrader
+            
+            # Check if rubric file exists
+            task_source.get_task_file_contents(task_id, "rubric/rubric.json")
+            
+            # Create grader instance without loading rubric yet
+            # The rubric will be loaded by init_rubric_grader() when needed
+            task.rubric_grader = SweBenchExtRubricGrader()
+            
+        except Exception:
+            # No rubric or failed to load - that's OK, rubric grading is optional
+            pass
+
+        return task
+    
+    def _get_rubric_dict(self) -> Dict[str, Any]:
+        """
+        Get the rubric dictionary for this task.
+        
+        Returns:
+            Rubric dictionary loaded from task source
+            
+        Raises:
+            ValueError: If rubric cannot be loaded
+        """
+        try:
+            rubric_content = self.task_source.get_task_file_contents(
+                self.task_instance.id,
+                "rubric/rubric.json"
+            )
+            return json.loads(rubric_content)
+        except Exception as e:
+            raise ValueError(f"Failed to load rubric for task {self.task_instance.id}: {e}")
+    
     # =========================================================================
     # Abstract Method Implementations
     # =========================================================================

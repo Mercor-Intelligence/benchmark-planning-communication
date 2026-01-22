@@ -46,8 +46,9 @@ def convert_harness_rubric_to_framework(harness_dict: Dict[str, Any]) -> Rubric:
     criteria = []
     categories = {}
     
-    # Process all category keys
-    for category_name in ["functional", "robustness", "style", "trajectory", "correctness"]:
+    # Process category keys - EXCLUDE "correctness" which often has 1000+ auto-generated criteria
+    # LLMs can't handle that many criteria effectively
+    for category_name in ["functional", "robustness", "style", "trajectory"]:
         if category_name in harness_dict:
             category_criteria = harness_dict[category_name]
             category_ids = []
