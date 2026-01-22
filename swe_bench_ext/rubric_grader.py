@@ -190,10 +190,10 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
             sections.append(git_diff)
             sections.append("```")
         
-        # Add trajectory (increased limit to provide more context)
+        # Add trajectory (full context for comprehensive evaluation)
         if trajectory:
             sections.append("\n## Agent's Work History")
-            sections.append(trajectory[:30000])  # ~7500 tokens, enough for full context
+            sections.append(trajectory)  # Send full trajectory without truncation
         
         # Instructions
         sections.append("\n## Your Task")
