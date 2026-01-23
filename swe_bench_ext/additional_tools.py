@@ -16,11 +16,11 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from lighthouse.core.registry import tool
-from lighthouse.core.tools.base_tool import BaseTool, BaseHyperparameters, ToolResult
-from lighthouse.core.harness.base_sandbox import BaseSandbox
+from lighthouse.lighthouse.core.registry import tool
+from lighthouse.lighthouse.core.tools.base_tool import BaseTool, BaseHyperparameters, ToolResult
+from lighthouse.lighthouse.core.harness.base_sandbox import BaseSandbox
 
-from lighthouse.core.benchmark_tasks.base_benchmark_task import BaseBenchmarkTask
+from lighthouse.lighthouse.core.benchmark_tasks.base_benchmark_task import BaseBenchmarkTask
 
 
 # =============================================================================

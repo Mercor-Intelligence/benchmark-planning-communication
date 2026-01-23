@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 import sys
 from pathlib import Path
 
-from lighthouse.core.grading.rubric.models import (
+from lighthouse.lighthouse.core.grading.rubric.models import (
     Rubric,
     RubricEvalCriteria,
 )
