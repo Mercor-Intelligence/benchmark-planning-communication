@@ -108,8 +108,9 @@ config/task_source_config.json
 config/benchmark_task_config.yaml 
 config/benchmark_task_config.json
 
-tasks.jsonl
-predictions.jsonl
 
 output.log
 PR.md
+
+tasks.jsonl
+predictions.jsonl

@@ -15,23 +15,23 @@ from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
 from pydantic import Field
 
-from lighthouse.lighthouse.core.benchmark_tasks.base_benchmark_task import (
+from lighthouse.core.benchmark_tasks.base_benchmark_task import (
     BaseBenchmarkTask,
     BaseTaskInstance,
 )
-from lighthouse.lighthouse.core.benchmark_tasks.models import TestSummary, TestStatus
-from lighthouse.lighthouse.core.benchmark_tasks.task_source import FolderTaskSource
-from lighthouse.lighthouse.core.benchmark_tasks.benchmark_config import BenchmarkConfig
-from lighthouse.lighthouse.common.parsing import (
+from lighthouse.core.benchmark_tasks.models import TestSummary, TestStatus
+from lighthouse.core.benchmark_tasks.task_source import FolderTaskSource
+from lighthouse.core.benchmark_tasks.benchmark_config import BenchmarkConfig
+from lighthouse.common.parsing import (
     parse_test_output,
     normalize_test_id,
     get_framework_config,
     get_test_command_with_output,
 )
-from lighthouse.lighthouse.common.utils.cmd_generation import generate_git_init_script, generate_git_apply_script, generate_git_diff_script
-from lighthouse.lighthouse.core.registry import benchmark_task
-from lighthouse.lighthouse.core.grading.rubric.models import Rubric
-from lighthouse.lighthouse.core.benchmark_tasks.task_source import TaskSource
+from lighthouse.common.utils.cmd_generation import generate_git_init_script, generate_git_apply_script, generate_git_diff_script
+from lighthouse.core.registry import benchmark_task
+from lighthouse.core.grading.rubric.models import Rubric
+from lighthouse.core.benchmark_tasks.task_source import TaskSource
 from .config import SweBenchExtConfig
 
 
