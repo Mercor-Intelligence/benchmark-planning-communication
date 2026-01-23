@@ -1,6 +1,2 @@
 # Benchmark task configuration for swe-bench-ext
 excluded_context: []
-
-# ECR image template for Modal execution
-# The {task_id} placeholder will be replaced with the actual task ID
-image_uri_template: "717626256484.dkr.ecr.us-east-1.amazonaws.com/swe-bench-ext:{task_id}"
