@@ -12,7 +12,7 @@ from typing import Optional, List
 
 from pydantic import Field
 
-from core.benchmark_tasks.benchmark_config import BenchmarkConfig
+from lighthouse.core.benchmark_tasks.benchmark_config import BenchmarkConfig
 
 
 class SweBenchExtConfig(BenchmarkConfig):

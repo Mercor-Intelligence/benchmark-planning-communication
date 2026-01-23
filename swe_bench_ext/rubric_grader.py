@@ -8,13 +8,8 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Add eval-framework to path
-_eval_framework_path = Path(__file__).parent.parent / "eval-framework"
-if _eval_framework_path.exists() and str(_eval_framework_path) not in sys.path:
-    sys.path.insert(0, str(_eval_framework_path))
-
-from core.grading.rubric.base_grader import BaseRubricGrader
-from core.grading.rubric.models import Rubric
+from lighthouse.core.grading.rubric.base_grader import BaseRubricGrader
+from lighthouse.core.grading.rubric.models import Rubric
 
 from .rubric_utils import convert_harness_rubric_to_framework
 
