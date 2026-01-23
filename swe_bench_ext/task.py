@@ -202,8 +202,9 @@ class SweBenchExtTask(BaseBenchmarkTask):
         try:
             from .rubric_grader import SweBenchExtRubricGrader
             
-            # Check if rubric file exists
-            task_source.get_task_file_contents(task_id, "rubric/rubric.json")
+            # Use configurable rubric file path
+            rubric_file = task.config.rubric_file if task.config else "rubric/rubric.json"
+            task_source.get_task_file_contents(task_id, rubric_file)
             
             # Create grader instance without loading rubric yet
             # The rubric will be loaded by init_rubric_grader() when needed
@@ -226,9 +227,10 @@ class SweBenchExtTask(BaseBenchmarkTask):
             ValueError: If rubric cannot be loaded
         """
         try:
+            rubric_file = self.config.rubric_file if self.config else "rubric/rubric.json"
             rubric_content = self.task_source.get_task_file_contents(
                 self.task_instance.id,
-                "rubric/rubric.json"
+                rubric_file
             )
             return json.loads(rubric_content)
         except Exception as e:
@@ -875,7 +877,7 @@ exit $test_exit_code
     
     def load_rubric(self, task_source: "TaskSource") -> "Rubric":
         """
-        Load rubric from task's rubric/rubric.json file.
+        Load rubric from task's rubric file.
         
         Args:
             task_source: TaskSource to load rubric from
@@ -890,9 +892,10 @@ exit $test_exit_code
         from .rubric_utils import convert_harness_rubric_to_framework
         
         try:
+            rubric_file = self.config.rubric_file if self.config else "rubric/rubric.json"
             rubric_content = task_source.get_task_file_contents(
                 self.task_instance.id,
-                "rubric/rubric.json"
+                rubric_file
             )
             rubric_dict = json.loads(rubric_content)
             return convert_harness_rubric_to_framework(rubric_dict)

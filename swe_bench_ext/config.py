@@ -12,7 +12,7 @@ from typing import Optional, List
 
 from pydantic import Field
 
-from core.benchmark_tasks.benchmark_config import BenchmarkConfig, BenchmarkType
+from core.benchmark_tasks.benchmark_config import BenchmarkConfig
 
 
 class SweBenchExtConfig(BenchmarkConfig):
@@ -34,6 +34,14 @@ class SweBenchExtConfig(BenchmarkConfig):
     image_uri_template: Optional[str] = Field(
         default=None,
         description="Template for Docker image URI with {task_id} placeholder",
+    )
+    
+    # Rubric configuration
+    rubric_file: str = Field(
+        default="rubric/rubric.json",
+        description="Path to rubric file within task directory (relative to task root). "
+                    "Set to 'rubric/rubric.json' for legacy format, or "
+                    "'rubric/execution.json' / 'rubric/planning.json' for split rubrics."
     )
     
     def get_image_uri(self, task_id: str) -> str:
