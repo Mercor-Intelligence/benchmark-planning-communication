@@ -160,6 +160,28 @@ lighthouse grade-batch \
 
 ## Configuration Files
 
+The `config/` directory contains example configuration files that you need to copy and customize before running evaluations.
+
+### Initial Setup
+
+Copy the example files to create your configuration:
+
+```bash
+cp config/task_source_config.yaml.example config/task_source_config.yaml
+cp config/benchmark_task_config.yaml.example config/benchmark_task_config.yaml
+```
+
+Then pass them to the CLI:
+
+```bash
+lighthouse execute-single \
+    --benchmark swe_bench_ext \
+    --task-id django__django-12345 \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml \
+    --benchmark-overrides-file config/benchmark_task_config.yaml
+```
+
 ### config/task_source_config.yaml
 
 Configures where tasks are loaded from:

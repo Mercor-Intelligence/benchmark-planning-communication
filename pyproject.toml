@@ -7,17 +7,28 @@ name = "benchmark-swe-bench-ext"
 version = "0.1.0"
 description = "SWE-Bench Extended benchmark task implementation for eval-framework"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.13"
 authors = [
     { name = "Mercor Intelligence", email = "engineering@mercor.com" },
 ]
 
 dependencies = [
     "pydantic>=2.0",
-    "litellm==1.80.15"
+    "litellm==1.80.15",
+    "lighthouse",  # Local workspace member - brings in all its dependencies
 ]
 
-# Note: eval-framework is added as a git submodule, not a pip dependency
+[project.scripts]
+lighthouse = "lighthouse.run_eval:cli_main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["swe_bench_ext", "lighthouse"]
+packages = ["swe_bench_ext"]
+
+[tool.uv.workspace]
+members = ["lighthouse"]
+
+[tool.uv.sources]
+lighthouse = { workspace = true }
