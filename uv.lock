@@ -1291,6 +1291,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "docker" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1301,6 +1302,7 @@ dev = [
 requires-dist = [
     { name = "daytona" },
     { name = "docker" },
+    { name = "docker", marker = "extra == 'dev'" },
     { name = "google-genai" },
     { name = "harbor", git = "https://github.com/Mercor-Intelligence/harbor.git" },
     { name = "inspect-ai", specifier = ">=0.3.146" },
