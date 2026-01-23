@@ -15,22 +15,23 @@ from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
 from pydantic import Field
 
-from core.benchmark_tasks.base_benchmark_task import (
+from lighthouse.core.benchmark_tasks.base_benchmark_task import (
     BaseBenchmarkTask,
     BaseTaskInstance,
 )
-from core.benchmark_tasks.models import TestSummary, TestStatus
-from core.benchmark_tasks.task_source import FolderTaskSource
-from core.benchmark_tasks.benchmark_config import BenchmarkConfig
-from common.parsing import (
+from lighthouse.core.benchmark_tasks.models import TestSummary, TestStatus
+from lighthouse.core.benchmark_tasks.task_source import FolderTaskSource
+from lighthouse.core.benchmark_tasks.benchmark_config import BenchmarkConfig
+from lighthouse.common.parsing import (
     parse_test_output,
     normalize_test_id,
     get_framework_config,
     get_test_command_with_output,
 )
-from common.utils.cmd_generation import generate_git_init_script, generate_git_apply_script
-from core.registry import benchmark_task
-    
+from lighthouse.common.utils.cmd_generation import generate_git_init_script, generate_git_apply_script, generate_git_diff_script
+from lighthouse.core.registry import benchmark_task
+from lighthouse.core.grading.rubric.models import Rubric
+from lighthouse.core.benchmark_tasks.task_source import TaskSource
 from .config import SweBenchExtConfig
 
 
@@ -875,7 +876,7 @@ exit $test_exit_code
             "PASS_TO_PASS": inst.pass_to_pass,
         }
     
-    def load_rubric(self, task_source: "TaskSource") -> "Rubric":
+    def load_rubric(self, task_source: TaskSource) -> Rubric:
         """
         Load rubric from task's rubric file.
         
@@ -927,3 +928,12 @@ exit $test_exit_code
             f"test_framework='{inst.test_framework}'"
             f")"
         )
+
+    def generate_solution_fetch_script(self) -> Union[str, List[str]]:
+        """
+        Generate script to fetch the solution from the sandbox.
+        
+        Returns:
+            Bash script that outputs the solution to stdout
+        """
+        return generate_git_diff_script(target_dir=self.workdir, commit=self.task_instance.base_commit or "$(git rev-list --max-parents=0 HEAD)")
