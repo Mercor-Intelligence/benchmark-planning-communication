@@ -7,7 +7,7 @@ name = "benchmark-swe-bench-ext"
 version = "0.1.0"
 description = "SWE-Bench Extended benchmark task implementation for eval-framework"
 readme = "README.md"
-requires-python = "==3.13"
+requires-python = ">=3.13"
 authors = [
     { name = "Mercor Intelligence", email = "engineering@mercor.com" },
 ]
