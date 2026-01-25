@@ -1,4 +1,0 @@
-[submodule "lighthouse"]
-	path = lighthouse
-	url = https://github.com/Mercor-Intelligence/eval-framework.git
-	branch = main
