@@ -7,19 +7,18 @@ name = "benchmark-swe-bench-ext"
 version = "0.1.0"
 description = "SWE-Bench Extended benchmark task implementation for eval-framework"
 readme = "README.md"
-requires-python = ">=3.13"
-authors = [
-    { name = "Mercor Intelligence", email = "engineering@mercor.com" },
-]
-
+requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
-    "litellm==1.80.15",
-    "lighthouse",  # Local workspace member - brings in all its dependencies
+    "litellm>=1.80.0",
+    # lighthouse is a peer dependency - must be installed separately
+    # This avoids circular dependency issues during pip resolution
+    # Install with: pip install git+https://github.com/Mercor-Intelligence/eval-framework.git
 ]
 
-[project.scripts]
-lighthouse = "lighthouse.run_eval:cli_main"
+[project.urls]
+Homepage = "https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext"
+Repository = "https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext.git"
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -27,12 +26,5 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 packages = ["swe_bench_ext"]
 
-[tool.uv.workspace]
-members = ["lighthouse"]
-
-[tool.uv.sources]
-lighthouse = { workspace = true }
-
 [tool.pyright]
-extraPaths = ["lighthouse"]
-pythonVersion = "3.13"
+pythonVersion = "3.12"
