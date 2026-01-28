@@ -19,6 +19,10 @@ SWE-Bench Extended benchmark task implementation for [lighthouse](https://github
 git clone --recursive https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext.git
 cd benchmark-swe-bench-ext
 pip install -e .
+
+# Set up lighthouse environment variables for local execution
+cp lighthouse/.env.example lighthouse/.env
+# Edit lighthouse/.env and fill in values in needed for local execution
 ```
 
 ## Usage

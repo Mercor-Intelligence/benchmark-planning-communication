@@ -96,6 +96,7 @@ class SweBenchExtTask(BaseBenchmarkTask):
     """
 
     config: SweBenchExtConfig
+    task_source: FolderTaskSource
     
     # === Class-level configuration ===
     config_class: ClassVar[Type[BenchmarkConfig]] = SweBenchExtConfig
@@ -875,34 +876,7 @@ exit $test_exit_code
             "FAIL_TO_PASS": inst.fail_to_pass,
             "PASS_TO_PASS": inst.pass_to_pass,
         }
-    
-    def load_rubric(self, task_source: TaskSource) -> Rubric:
-        """
-        Load rubric from task's rubric file.
         
-        Args:
-            task_source: TaskSource to load rubric from
-            
-        Returns:
-            Rubric object (framework format)
-            
-        Example:
-            task = SweBenchExtTask.from_id("task-id", task_source)
-            rubric = task.load_rubric(task_source)
-        """
-        from .rubric_utils import convert_harness_rubric_to_framework
-        
-        try:
-            rubric_file = self.config.rubric_file if self.config else "rubric/rubric.json"
-            rubric_content = task_source.get_task_file_contents(
-                self.task_instance.id,
-                rubric_file
-            )
-            rubric_dict = json.loads(rubric_content)
-            return convert_harness_rubric_to_framework(rubric_dict)
-        except Exception as e:
-            raise ValueError(f"Failed to load rubric for task {self.task_instance.id}: {e}")
-    
     def get_grading_guidelines(self) -> str:
         """
         Get grading guidelines for SWE-Bench-Ext tasks.

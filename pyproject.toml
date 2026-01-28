@@ -11,9 +11,8 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
     "litellm>=1.80.0",
-    # lighthouse is a peer dependency - must be installed separately
-    # This avoids circular dependency issues during pip resolution
-    # Install with: pip install git+https://github.com/Mercor-Intelligence/eval-framework.git
+    "lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse.git",
+    # to test out lighthouse changes on a branch as dev, pip install lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse.git@<lighthouse-new-branch-name>
 ]
 
 [project.urls]
@@ -28,3 +27,4 @@ packages = ["swe_bench_ext"]
 
 [tool.pyright]
 pythonVersion = "3.12"
+
