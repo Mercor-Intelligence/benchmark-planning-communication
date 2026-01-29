@@ -31,6 +31,11 @@ from .rubric_utils import (
     convert_framework_rubric_to_harness,
 )
 
+# Import additional_tools to register @tool decorators (e.g., ask_question)
+# This ensures the AskQuestionTool is registered in the tool registry when
+# the swe_bench_ext plugin is loaded via PluginLoader
+from . import additional_tools  # noqa: F401
+
 __all__ = [
     "SweBenchExtTask",
     "SweBenchExtConfig",
@@ -38,6 +43,9 @@ __all__ = [
     "SweBenchExtRubricGrader",
     "convert_harness_rubric_to_framework",
     "convert_framework_rubric_to_harness",
+    
+    # Additional tools module (registers @tool decorators)
+    "additional_tools",
 ]
 
 __version__ = "0.1.0"
