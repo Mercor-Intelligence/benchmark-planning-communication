@@ -27,8 +27,8 @@ cd benchmark-swe-bench-ext
 uv sync
 
 # Set up lighthouse environment variables for local execution
-cp lighthouse/.env.example lighthouse/.env
-# Edit lighthouse/.env and fill in values in needed for local execution
+cp .env.example .env
+# Edit .env and fill in values in needed for local execution
 ```
 
 ## Usage
