@@ -12,7 +12,7 @@ dependencies = [
     "pydantic>=2.0",
     "litellm>=1.80.0",
     "lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse.git",
-    # to test out lighthouse changes on a branch as dev, pip install lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse.git@<lighthouse-new-branch-name>
+    # to test out lighthouse changes on a branch as dev, pip install "lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse.git@<lighthouse-new-branch-name>"
 ]
 
 [project.urls]

@@ -15,10 +15,16 @@ SWE-Bench Extended benchmark task implementation for [lighthouse](https://github
 
 ### Basic Installation
 
+This project uses [uv](https://docs.astral.sh/uv/) for fast, reliable Python package management.
+
 ```bash
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and install
 git clone --recursive https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext.git
 cd benchmark-swe-bench-ext
-pip install -e .
+uv sync
 
 # Set up lighthouse environment variables for local execution
 cp lighthouse/.env.example lighthouse/.env
@@ -27,7 +33,8 @@ cp lighthouse/.env.example lighthouse/.env
 
 ## Usage
 
-### Basic Task Usage
+> **Note:** All `lighthouse` commands should be run with `uv run lighthouse` to use the uv-managed environment, or activate the virtual environment first with `source .venv/bin/activate`.
+
 ## Task Directory Structure
 
 By default, tasks are loaded from the `tasks/` directory (configured in `config/task_source_config.yaml`). Each task should be in its own subdirectory:
@@ -72,7 +79,7 @@ The `lighthouse` CLI is installed with the package and provides commands for bot
 Run an agent on a single task:
 
 ```bash
-lighthouse execute-single \
+uv run lighthouse execute-single \
     --benchmark swe_bench_ext \
     --task-id django__django-12345 \
     --model anthropic/claude-sonnet-4-5-20250929 \
@@ -91,7 +98,7 @@ Create a `tasks.jsonl` file:
 Run batch execution:
 
 ```bash
-lighthouse execute-batch \
+uv run lighthouse execute-batch \
     --benchmark swe_bench_ext \
     --tasks-file tasks.jsonl \
     --model anthropic/claude-sonnet-4-5-20250929 \
@@ -116,7 +123,7 @@ lighthouse execute-batch \
 ### Grade a Single Solution
 
 ```bash
-lighthouse grade-single \
+uv run lighthouse grade-single \
     --benchmark swe_bench_ext \
     --task-id django__django-12345 \
     --solution-file solution.patch \
@@ -126,7 +133,7 @@ lighthouse grade-single \
 Optionally include the agent trajectory for analysis:
 
 ```bash
-lighthouse grade-single \
+uv run lighthouse grade-single \
     --benchmark swe_bench_ext \
     --task-id django__django-12345 \
     --solution-file solution.patch \
@@ -146,7 +153,7 @@ Create a `predictions.jsonl` file:
 Run batch grading:
 
 ```bash
-lighthouse grade-batch \
+uv run lighthouse grade-batch \
     --benchmark swe_bench_ext \
     --predictions-file predictions.jsonl \
     --task-source-file config/task_source_config.yaml
@@ -178,7 +185,7 @@ cp config/benchmark_task_config.yaml.example config/benchmark_task_config.yaml
 Then pass them to the CLI:
 
 ```bash
-lighthouse execute-single \
+uv run lighthouse execute-single \
     --benchmark swe_bench_ext \
     --task-id django__django-12345 \
     --model anthropic/claude-sonnet-4-5-20250929 \
@@ -335,11 +342,11 @@ See [LICENSE](LICENSE) file for details.
 
 ```bash
 # View help
-lighthouse --help
-lighthouse execute-single --help
+uv run lighthouse --help
+uv run lighthouse execute-single --help
 
 # Execute with verbose logging
-lighthouse execute-single \
+uv run lighthouse execute-single \
     --benchmark swe_bench_ext \
     --task-id my-task \
     --model anthropic/claude-sonnet-4-5-20250929 \
@@ -347,7 +354,7 @@ lighthouse execute-single \
     -v
 
 # Execute with concurrency limit
-lighthouse execute-batch \
+uv run lighthouse execute-batch \
     --benchmark swe_bench_ext \
     --tasks-file tasks.jsonl \
     --model anthropic/claude-sonnet-4-5-20250929 \
@@ -355,7 +362,7 @@ lighthouse execute-batch \
     --concurrency-limit 5
 
 # Grade with custom test timeout
-lighthouse grade-batch \
+uv run lighthouse grade-batch \
     --benchmark swe_bench_ext \
     --predictions-file predictions.jsonl \
     --task-source-file config/task_source_config.yaml \
