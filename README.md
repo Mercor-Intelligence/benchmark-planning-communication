@@ -61,7 +61,38 @@ reminder_policy:
   artifact_mode: "off"
 ```
 
-### 4. Run Your First Evaluation
+### 4. Configure Tools (Optional)
+
+The agent has access to a default set of tools. You can customize which tools are available:
+
+**Default tools:** `bash`, `view_file`, `str_replace`, `create_file`, `insert_str`
+
+```bash
+# Add tools to the defaults (e.g., add ask_question for clarifying questions)
+uv run lighthouse execute-single ... --add-tools ask_question
+
+# Or replace the default tools entirely
+uv run lighthouse execute-single ... --tools bash view_file str_replace
+```
+
+You can also configure tool-specific options via a YAML file:
+
+```yaml
+# config/tool_options.yaml
+bash:
+  timeout: 120
+  max_output_lines: 1000
+view_file:
+  max_lines: 500
+```
+
+Then pass it to the CLI:
+
+```bash
+uv run lighthouse execute-single ... --tool-options-file config/tool_options.yaml
+```
+
+### 5. Run Your First Evaluation
 
 ```bash
 uv run lighthouse execute-single \
