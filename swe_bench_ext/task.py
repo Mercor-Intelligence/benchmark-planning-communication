@@ -465,8 +465,7 @@ INSTRUCTIONS:
 
 When you're done, your solution will be tested automatically against the test suite.
 Make sure your changes are complete and the code compiles/runs correctly."""
-        
-        # Append tool prompts if provided
+                
         if tool_prompts:
             prompt += "\n\n" + "\n".join(tool_prompts)
         
@@ -514,10 +513,6 @@ Make sure your changes are complete and the code compiles/runs correctly."""
         )
         
         prompt = "\n".join(parts)
-        
-        # Append tool prompts if provided
-        if tool_prompts:
-            prompt += "\n\n" + "\n".join(tool_prompts)
         
         return prompt
     

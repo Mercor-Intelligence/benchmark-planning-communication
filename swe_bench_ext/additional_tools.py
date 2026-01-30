@@ -21,6 +21,8 @@ from lighthouse.core.tools.base_tool import BaseTool, BaseHyperparameters, ToolR
 from lighthouse.core.harness.base_sandbox import BaseSandbox
 
 from lighthouse.core.benchmark_tasks.base_benchmark_task import BaseBenchmarkTask
+from lighthouse.core.options import HarnessExecutionOptions
+import litellm
 
 
 # =============================================================================
@@ -81,7 +83,7 @@ class AskQuestionHyperparameters(BaseHyperparameters):
     Attributes:
         history_path: Path to store chat history in the sandbox.
         responder_model: LLM model to use for simulating user responses.
-        responder_api_key_env_var: Environment variable name for the API key.
+        responder_api_key: Environment variable name for the API key.
         responder_type: Type of responder ("expert" or "novice").
         problem_statement: The problem description for context.
         prompt_statement: The user request/prompt for context.
@@ -91,7 +93,7 @@ class AskQuestionHyperparameters(BaseHyperparameters):
     """
     history_path: str = ASK_QUESTION_HISTORY_PATH
     responder_model: str = DEFAULT_RESPONDER_MODEL
-    responder_api_key_env_var: str = "RESPONDER_API_KEY"
+    responder_api_key_env_var: str = ""
     responder_type: str = "expert"  # "expert" or "novice"
     
     # Context from the task (populated by from_benchmark_task)
@@ -160,11 +162,9 @@ Best practices:
     @classmethod
     def from_benchmark_task(
         cls,
-        task: "BaseBenchmarkTask",
+        task: BaseBenchmarkTask,
         get_sandbox_func: Callable[[], BaseSandbox],
-        responder_model: Optional[str] = None,
-        responder_api_key_env_var: str = "RESPONDER_API_KEY",
-        responder_type: str = "expert",
+        harness_options: HarnessExecutionOptions,
     ) -> "AskQuestionTool":
         """
         Create AskQuestionTool configured for a benchmark task.
@@ -182,6 +182,13 @@ Best practices:
         Returns:
             Configured AskQuestionTool instance.
         """
+
+
+        responder_model = harness_options.tool_options.get("ask_question", {}).get("responder_model", harness_options.model)
+
+        responder_api_key_env_var = harness_options.tool_options.get("ask_question", {}).get("responder_api_key_env_var", "")
+
+        responder_type = harness_options.tool_options.get("ask_question", {}).get("responder_type", "expert")
         # Extract context from the task instance
         task_instance = task.task_instance
         
@@ -302,32 +309,8 @@ Best practices:
         """
         try:
             # Import litellm here to avoid import errors if not installed
-            try:
-                import litellm
-            except ImportError:
-                return ToolResult(
-                    output="",
-                    success=False,
-                    error=(
-                        "litellm is not installed. Please install it with: "
-                        "pip install litellm"
-                    ),
-                )
-            
             hp = self.hyperparameters
             sandbox = self.get_sandbox_func()
-            
-            # Get API key from environment
-            api_key = os.environ.get(hp.responder_api_key_env_var)
-            if not api_key:
-                return ToolResult(
-                    output="",
-                    success=False,
-                    error=(
-                        f"No API key configured for responder. "
-                        f"Set {hp.responder_api_key_env_var} environment variable."
-                    ),
-                )
             
             # Load existing chat history
             chat_history = await self._load_chat_history(sandbox)
@@ -342,6 +325,12 @@ Best practices:
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(chat_history)
             
+
+            if hp.responder_api_key_env_var:
+                api_key = os.environ.get(hp.responder_api_key_env_var)
+            else:
+                api_key = None
+
             # Make async LLM call using litellm
             response = await litellm.acompletion(
                 model=hp.responder_model,
