@@ -19,9 +19,17 @@ from lighthouse.core.benchmark_tasks.base_benchmark_task import (
     BaseBenchmarkTask,
     BaseTaskInstance,
 )
-from lighthouse.core.benchmark_tasks.models import TestSummary, TestStatus
+from lighthouse.core.benchmark_tasks.models import (
+    TestSummary,
+    TestStatus,
+    TaskStage,
+    StageType,
+    ArtifactSpec,
+)
 from lighthouse.core.benchmark_tasks.task_source import FolderTaskSource
 from lighthouse.core.benchmark_tasks.benchmark_config import BenchmarkConfig
+from lighthouse.core.benchmark_tasks.stage_postprocessing import StagePostProcessor
+from lighthouse.core.post_eval.artifacts.postprocessor import ArtifactValidationPostProcessor
 from lighthouse.common.parsing import (
     parse_test_output,
     normalize_test_id,
@@ -32,6 +40,7 @@ from lighthouse.common.utils.cmd_generation import generate_git_init_script, gen
 from lighthouse.core.registry import benchmark_task
 from lighthouse.core.grading.rubric.models import Rubric
 from lighthouse.core.benchmark_tasks.task_source import TaskSource
+from lighthouse.core.harness.continuation_policy import CompositeUserMessageHandler, ConstantFooter
 from .config import SweBenchExtConfig
 
 
@@ -104,6 +113,180 @@ class SweBenchExtTask(BaseBenchmarkTask):
 
     # === Instance attributes ===
     task_instance: SweBenchExtTaskInstance
+
+    # =========================================================================
+    # Multi-stage execution (config-driven)
+    # =========================================================================
+
+    def get_stages(self) -> List[TaskStage]:
+        """
+        Define stages for this task.
+
+        Default: single solve stage.
+        If config.enable_pr_artifacts is true: solve -> artifacts.
+        """
+        stage_tools = getattr(self.config, "stage_tools", {}) or {}
+        solve_tools = stage_tools.get("solve", []) or []
+
+        stages: List[TaskStage] = [
+            TaskStage(
+                id="solve",
+                type=StageType.AGENT,
+                name="Solve",
+                tool_names=solve_tools,
+                params={},
+            )
+        ]
+
+        if getattr(self.config, "enable_pr_artifacts", False):
+            out_dir = getattr(self.config, "artifacts_out_dir", "/workspace/repo/.agent_artifacts")
+            artifacts_user_prompt = getattr(self.config, "artifacts_user_prompt", None)
+            artifacts_tools = stage_tools.get("artifacts", []) or []
+            specs = getattr(self.config, "artifacts_specs", None)
+            # Defensive: accept dicts too (config YAML may come in as plain dicts)
+            if specs and specs and not isinstance(specs[0], ArtifactSpec):
+                try:
+                    specs = [ArtifactSpec(**s) for s in specs]  # type: ignore[arg-type]
+                except Exception:
+                    specs = None
+            stages.append(
+                TaskStage(
+                    id="artifacts",
+                    type=StageType.AGENT,
+                    name="Artifacts",
+                    tool_names=artifacts_tools,
+                    params={"out_dir": out_dir, "user_prompt": artifacts_user_prompt, "specs": specs},
+                )
+            )
+
+        return stages
+
+    def build_stage_system_prompt(self, stage: TaskStage, tool_prompts: Optional[List[str]] = None) -> str:
+        """
+        Optional per-stage system prompt override (via config.stage_system_prompts[stage.id]).
+        Falls back to BaseBenchmarkTask behavior.
+        """
+        stage_system_prompts = getattr(self.config, "stage_system_prompts", {}) or {}
+        override = (stage_system_prompts.get(stage.id) or "").strip()
+        if override:
+            prompt = override
+            if tool_prompts:
+                prompt += "\n\n" + "\n".join(tool_prompts)
+            return prompt
+        return super().build_stage_system_prompt(stage, tool_prompts=tool_prompts)
+
+    def build_stage_user_prompt(self, stage: TaskStage, tool_prompts: Optional[List[str]] = None) -> str:
+        """
+        Optional per-stage user prompt override (via config.stage_user_prompts[stage.id]).
+        For artifacts stage, uses hardcoded prompt (not from config).
+        Falls back to BaseBenchmarkTask behavior.
+        """
+        stage_user_prompts = getattr(self.config, "stage_user_prompts", {}) or {}
+        override = (stage_user_prompts.get(stage.id) or "").strip()
+        
+        # Hardcoded artifacts prompt (not from config)
+        if not override and stage.id == "artifacts":
+            override = """Now create documentation artifacts in {out_dir}:
+
+1. Create PR_REPORT.md with:
+   - ## Summary: Brief description of changes
+   - ## Files Changed: List of modified files
+   - ## Testing: How to test the changes
+   - ## Notes: Any additional context
+
+2. Create code_flow.puml with a PlantUML diagram showing the code flow of your implementation"""
+
+        if override:
+            # Best-effort templating for artifacts out_dir
+            if stage.id == "artifacts":
+                out_dir = (stage.params or {}).get("out_dir") or getattr(self.config, "artifacts_out_dir", "/workspace/repo/.agent_artifacts")
+                try:
+                    override = override.format(out_dir=out_dir)
+                except Exception:
+                    pass
+            prompt = override
+            if tool_prompts:
+                prompt += "\n\n" + "\n".join(tool_prompts)
+            return prompt
+
+        return super().build_stage_user_prompt(stage, tool_prompts=tool_prompts)
+
+    def get_user_message_handler(self, stage: TaskStage, options=None):
+        """
+        Build UserMessageHandler based on reminder policy configuration.
+        
+        Returns:
+            CompositeUserMessageHandler with "once at start" reminder handler
+            None if all reminders are off
+        """
+        from lighthouse.core.harness.continuation_policy import CompositeUserMessageHandler
+        from swe_bench_ext.reminders import (
+            README_REMINDER_LINE,
+            ASK_QUESTION_REMINDER_LINE,
+            ConstantReminderWithTiming,
+        )
+        
+        # Get reminder policy from config
+        policy = getattr(self.config, "reminder_policy", None)
+        if not policy:
+            return None
+        
+        # Normalize modes
+        readme_mode = (policy.readme_mode or "off").strip().lower()
+        ask_question_mode = (policy.ask_question_mode or "off").strip().lower()
+        
+        # Get tools enabled for this stage
+        stage_tool_names = stage.tool_names if stage.tool_names else []
+        
+        # =====================================================================
+        # PHASE 1: Build constant reminder items (constant mode implementation)
+        # =====================================================================
+        constant_items = []
+        
+        # README reminder: always shown if mode is "constant"
+        if readme_mode == "constant":
+            constant_items.append(README_REMINDER_LINE)
+        
+        # ask_question reminder: only shown if mode is "constant" AND tool is available
+        if ask_question_mode == "constant":
+            if "ask_question" in stage_tool_names:
+                constant_items.append(ASK_QUESTION_REMINDER_LINE)
+            # else: skip reminder - tool not available, would confuse agent!
+        
+        # If no reminders enabled, return None 
+        if not constant_items:
+            return None
+        
+        # =====================================================================
+        # Create timing-aware handler 
+        # =====================================================================
+        # This handler checks for assistant_messages before showing reminders
+        timing_handler = ConstantReminderWithTiming(reminder_items=constant_items)
+        
+        # =====================================================================
+        # Return CompositeUserMessageHandler
+        # =====================================================================
+        # For Phase 1 (constant mode):
+        # - handlers=[timing_handler] contains our timing-aware constant reminder
+        #
+        # For Phase 2 (staged mode), we would:
+        # - Add staged handler instances to the handlers=[] list
+        # - All handlers check conversation state before returning messages
+        return CompositeUserMessageHandler(
+            handlers=[timing_handler],  # Timing-aware constant reminder handler
+            constant_footer=None,  # Not needed - handler controls display
+            emit_footer_when_no_message=False,  # Handler controls timing
+        )
+
+    def get_stage_postprocessors(self, stage: TaskStage) -> List[StagePostProcessor]:
+        """
+        Return postprocessors for the given stage.
+        
+        For the artifacts stage, returns ArtifactValidationPostProcessor if enabled.
+        """
+        if stage.id == "artifacts" and getattr(self.config, "enable_pr_artifacts", False):
+            return [ArtifactValidationPostProcessor.from_stage(stage)]
+        return []
     
     # =========================================================================
     # Task Loading (implements abstract method)

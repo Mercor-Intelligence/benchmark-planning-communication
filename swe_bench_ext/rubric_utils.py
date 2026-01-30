@@ -41,9 +41,29 @@ def convert_harness_rubric_to_framework(harness_dict: Dict[str, Any]) -> Rubric:
     criteria = []
     categories = {}
     
-    # Process category keys - EXCLUDE "correctness" which often has 1000+ auto-generated criteria
-    # LLMs can't handle that many criteria effectively
-    for category_name in ["functional", "robustness", "style", "trajectory"]:
+    # Process category keys.
+    #
+    # "correctness" can be extremely large (1000+ auto-generated criteria), which
+    # is not practical for LLM grading. However, for benchmarks/tasks where
+    # correctness is intentionally small, we do include it.
+    correctness = harness_dict.get("correctness") or []
+    metadata = harness_dict.get("metadata") or {}
+    num_correctness = metadata.get("num_correctness_criteria")
+    include_correctness = False
+    try:
+        if num_correctness is not None:
+            include_correctness = int(num_correctness) <= 50
+        else:
+            include_correctness = len(correctness) <= 50
+    except Exception:
+        include_correctness = False
+
+    category_order: List[str] = []
+    if include_correctness and "correctness" in harness_dict:
+        category_order.append("correctness")
+    category_order.extend(["functional", "robustness", "style", "trajectory"])
+
+    for category_name in category_order:
         if category_name in harness_dict:
             category_criteria = harness_dict[category_name]
             category_ids = []
