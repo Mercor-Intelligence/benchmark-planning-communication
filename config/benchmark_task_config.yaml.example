@@ -1,2 +1,8 @@
 # Benchmark task configuration for swe-bench-ext
 excluded_context: []
+enable_pr_artifacts:
+reminder_policy:
+  readme_mode: "off"
+  ask_question_mode: "off"
+  artifact_mode: "off"
+

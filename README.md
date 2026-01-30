@@ -1,19 +1,10 @@
 # benchmark-swe-bench-ext
 
-SWE-Bench Extended benchmark task implementation for [eval-framework](https://github.com/Mercor-Intelligence/eval-framework).
-
-## Features
-
-- **Task Loading** - Load tasks from local directories or S3  
-- **Prompt Generation** - System and user prompts for agents  
-- **Test Execution** - Setup and run test scripts  
-- **Result Parsing** - Parse test output into structured summaries  
-- **Rubric Grading** - LLM-based evaluation against structured rubrics
 SWE-Bench Extended benchmark task implementation for [lighthouse](https://github.com/Mercor-Intelligence/lighthouse).
 
-## Setup
+## Quick Start
 
-### Basic Installation
+### 1. Installation
 
 This project uses [uv](https://docs.astral.sh/uv/) for fast, reliable Python package management.
 
@@ -26,57 +17,66 @@ git clone --recursive https://github.com/Mercor-Intelligence/benchmark-swe-bench
 cd benchmark-swe-bench-ext
 uv sync
 
-# Set up lighthouse environment variables for local execution
+# Set up environment variables
 cp .env.example .env
-# Edit .env and fill in values in needed for local execution
+# Edit .env and fill in values needed for local execution
 ```
 
-## Usage
+### 2. Configure Task Source
+
+Copy the example configuration files:
+
+```bash
+cp config/task_source_config.yaml.example config/task_source_config.yaml
+cp config/benchmark_task_config.yaml.example config/benchmark_task_config.yaml
+```
+
+Edit `config/task_source_config.yaml` to point to your tasks:
+
+```yaml
+source_type: local_folder
+config:
+  path: tasks/
+  build_image_if_not_exists: true
+```
+
+### 3. Configure Benchmark (Optional)
+
+Edit `config/benchmark_task_config.yaml` to customize benchmark behavior. The defaults work out of the box, but you can adjust these options:
+
+```yaml
+# Exclude context sections from prompts (options: problem_statement, requirements, interface, knowledge_base)
+excluded_context: []
+
+# Use pre-built Docker images from a registry (optional)
+# image_uri_template: "your-registry.com/repo:{task_id}"
+
+# Enable PR artifacts generation stage
+enable_pr_artifacts: false
+
+# Configure reminder behavior (modes: "off", "constant")
+reminder_policy:
+  readme_mode: "off"
+  ask_question_mode: "off"
+  artifact_mode: "off"
+```
+
+### 4. Run Your First Evaluation
+
+```bash
+uv run lighthouse execute-single \
+    --benchmark swe_bench_ext \
+    --task-id django__django-12345 \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml \
+    --benchmark-overrides-file config/benchmark_task_config.yaml
+```
 
 > **Note:** All `lighthouse` commands should be run with `uv run lighthouse` to use the uv-managed environment, or activate the virtual environment first with `source .venv/bin/activate`.
 
-## Task Directory Structure
-
-By default, tasks are loaded from the `tasks/` directory (configured in `config/task_source_config.yaml`). Each task should be in its own subdirectory:
-
-```
-tasks/
-├── django__django-12345/
-│   ├── test_metadata.json      # Test configuration (required)
-│   ├── problem_statement.md    # Problem description
-│   ├── prompt_statement.md     # Customized prompt (optional, falls back to problem_statement)
-│   ├── golden.patch            # Reference solution
-│   ├── test.patch              # Test patch to apply before grading
-│   ├── requirements.json       # List of requirements
-│   ├── interface.md            # Interface specifications (optional)
-│   └── knowledge_base.md       # Additional context (optional)
-├── astropy__astropy-67890/
-│   └── ...
-```
-
-### test_metadata.json Format
-
-```json
-{
-  "language": "python",
-  "test_framework": "pytest",
-  "test_command": "pytest tests/ -xvs",
-  "test_files": ["tests/test_example.py"],
-  "FAIL_TO_PASS": ["tests/test_example.py::test_bug_fix"],
-  "PASS_TO_PASS": ["tests/test_example.py::test_existing"],
-  "base_commit": "abc123"
-}
-```
-
 ## Running Evaluations
 
-### Using the CLI
-
-The `lighthouse` CLI is installed with the package and provides commands for both execution (running an agent) and grading (evaluating a solution).
-
-#### Execute a Single Task
-
-Run an agent on a single task:
+### Execute a Single Task
 
 ```bash
 uv run lighthouse execute-single \
@@ -86,7 +86,7 @@ uv run lighthouse execute-single \
     --task-source-file config/task_source_config.yaml
 ```
 
-#### Execute Multiple Tasks (Batch)
+### Execute Multiple Tasks (Batch)
 
 Create a `tasks.jsonl` file:
 
@@ -169,31 +169,44 @@ uv run lighthouse grade-batch \
 | `--analyze-trajectory` / `--no-analyze-trajectory` | true | Enable/disable trajectory analysis |
 | `--derive-failure-mode` / `--no-derive-failure-mode` | true | Enable/disable failure mode derivation |
 
-## Configuration Files
-
-The `config/` directory contains example configuration files that you need to copy and customize before running evaluations.
-
-### Initial Setup
-
-Copy the example files to create your configuration:
+## Common Commands
 
 ```bash
-cp config/task_source_config.yaml.example config/task_source_config.yaml
-cp config/benchmark_task_config.yaml.example config/benchmark_task_config.yaml
-```
+# View help
+uv run lighthouse --help
+uv run lighthouse execute-single --help
 
-Then pass them to the CLI:
-
-```bash
+# Execute with verbose logging
 uv run lighthouse execute-single \
     --benchmark swe_bench_ext \
-    --task-id django__django-12345 \
+    --task-id my-task \
     --model anthropic/claude-sonnet-4-5-20250929 \
     --task-source-file config/task_source_config.yaml \
-    --benchmark-overrides-file config/benchmark_task_config.yaml
+    -v
+
+# Execute with concurrency limit
+uv run lighthouse execute-batch \
+    --benchmark swe_bench_ext \
+    --tasks-file tasks.jsonl \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml \
+    --concurrency-limit 5
+
+# Grade with custom test timeout
+uv run lighthouse grade-batch \
+    --benchmark swe_bench_ext \
+    --predictions-file predictions.jsonl \
+    --task-source-file config/task_source_config.yaml \
+    --test-timeout 1200
 ```
 
-### config/task_source_config.yaml
+---
+
+## Reference
+
+### Configuration Files
+
+#### config/task_source_config.yaml
 
 Configures where tasks are loaded from:
 
@@ -213,7 +226,7 @@ config:
   local_cache_dir: /tmp/task_cache
 ```
 
-### config/benchmark_task_config.yaml
+#### config/benchmark_task_config.yaml
 
 Benchmark-specific configuration:
 
@@ -222,7 +235,40 @@ excluded_context: []  # List of context sections to exclude from prompts
                       # Options: problem_statement, requirements, interface, knowledge_base
 ```
 
-## Python API Usage
+### Task Directory Structure
+
+By default, tasks are loaded from the `tasks/` directory (configured in `config/task_source_config.yaml`). Each task should be in its own subdirectory:
+
+```
+tasks/
+├── django__django-12345/
+│   ├── test_metadata.json      # Test configuration (required)
+│   ├── problem_statement.md    # Problem description
+│   ├── prompt_statement.md     # Customized prompt (optional, falls back to problem_statement)
+│   ├── golden.patch            # Reference solution
+│   ├── test.patch              # Test patch to apply before grading
+│   ├── requirements.json       # List of requirements
+│   ├── interface.md            # Interface specifications (optional)
+│   └── knowledge_base.md       # Additional context (optional)
+├── astropy__astropy-67890/
+│   └── ...
+```
+
+#### test_metadata.json Format
+
+```json
+{
+  "language": "python",
+  "test_framework": "pytest",
+  "test_command": "pytest tests/ -xvs",
+  "test_files": ["tests/test_example.py"],
+  "FAIL_TO_PASS": ["tests/test_example.py::test_bug_fix"],
+  "PASS_TO_PASS": ["tests/test_example.py::test_existing"],
+  "base_commit": "abc123"
+}
+```
+
+### Python API Usage
 
 ```python
 from swe_bench_ext import SweBenchExtTask, SweBenchExtConfig
@@ -247,7 +293,7 @@ print(f"Score: {summary.score}")
 print(f"Passed: {summary.metadata['f2p_passed']}/{summary.metadata['f2p_total']}")
 ```
 
-### Rubric-Based Grading
+#### Rubric-Based Grading
 
 ```python
 from swe_bench_ext import SweBenchExtTask, SweBenchExtRubricGrader
@@ -288,7 +334,7 @@ for score in result.criteria_scores:
     print(f"{score.criteria.criteria_id}: {score.score} - {score.explanation}")
 ```
 
-## Rubric Format
+### Rubric Format
 
 Rubrics are organized by category (functional, robustness, style, etc.):
 
@@ -303,8 +349,15 @@ functional_criteria = rubric.get_criteria_by_category('functional')
 # major = 1.0, minor = 0.5
 ```
 
+### Features
 
-## Project Structure
+- **Task Loading** - Load tasks from local directories or S3  
+- **Prompt Generation** - System and user prompts for agents  
+- **Test Execution** - Setup and run test scripts  
+- **Result Parsing** - Parse test output into structured summaries  
+- **Rubric Grading** - LLM-based evaluation against structured rubrics
+
+### Project Structure
 
 ```
 benchmark-swe-bench-ext/
@@ -328,7 +381,7 @@ benchmark-swe-bench-ext/
 └── README.md
 ```
 
-## Dependencies
+### Dependencies
 
 - **eval-framework** (submodule) - Core abstractions
 - **openai>=1.0.0** (optional) - For OpenAI grading
@@ -337,34 +390,3 @@ benchmark-swe-bench-ext/
 ## License
 
 See [LICENSE](LICENSE) file for details.
-
-## Common Commands
-
-```bash
-# View help
-uv run lighthouse --help
-uv run lighthouse execute-single --help
-
-# Execute with verbose logging
-uv run lighthouse execute-single \
-    --benchmark swe_bench_ext \
-    --task-id my-task \
-    --model anthropic/claude-sonnet-4-5-20250929 \
-    --task-source-file config/task_source_config.yaml \
-    -v
-
-# Execute with concurrency limit
-uv run lighthouse execute-batch \
-    --benchmark swe_bench_ext \
-    --tasks-file tasks.jsonl \
-    --model anthropic/claude-sonnet-4-5-20250929 \
-    --task-source-file config/task_source_config.yaml \
-    --concurrency-limit 5
-
-# Grade with custom test timeout
-uv run lighthouse grade-batch \
-    --benchmark swe_bench_ext \
-    --predictions-file predictions.jsonl \
-    --task-source-file config/task_source_config.yaml \
-    --test-timeout 1200
-```
