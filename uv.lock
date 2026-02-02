@@ -258,7 +258,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lighthouse", git = "https://github.com/Mercor-Intelligence/lighthouse.git?rev=v0.2.3" },
+    { name = "lighthouse", git = "https://github.com/Mercor-Intelligence/lighthouse.git?rev=latest" },
     { name = "litellm", specifier = ">=1.80.0" },
     { name = "pydantic", specifier = ">=2.0" },
 ]
@@ -1517,7 +1517,7 @@ wheels = [
 [[package]]
 name = "lighthouse"
 version = "0.1.0"
-source = { git = "https://github.com/Mercor-Intelligence/lighthouse.git?rev=v0.2.3#89efd1e4c1c89e700c9fb640a98d5ae6a5364887" }
+source = { git = "https://github.com/Mercor-Intelligence/lighthouse.git?rev=latest#89efd1e4c1c89e700c9fb640a98d5ae6a5364887" }
 dependencies = [
     { name = "boto3" },
     { name = "daytona" },
