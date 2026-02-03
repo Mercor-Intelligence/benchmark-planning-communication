@@ -24,6 +24,8 @@ from lighthouse.core.benchmark_tasks.base_benchmark_task import BaseBenchmarkTas
 from lighthouse.core.options import HarnessExecutionOptions
 import litellm
 
+from .kb_filters import filter_knowledge_base_for_responder
+
 
 # =============================================================================
 # Constants
@@ -53,6 +55,17 @@ Important guidelines:
 - If the question is unclear, ask for clarification
 """
 
+EXPERT_RESPONDER_PROMPT_ENHANCED = """You are an expert user (highly technical) who deeply understands the problem being solved.
+You are responding to questions from a developer who is implementing a solution.
+
+Rules:
+1. Answer ONLY using the context provided below (problem, request, interface, requirements, knowledge base).
+2. Be direct and actionable, but do NOT write code or propose specific patches.
+3. If asked about implementation details, explain expected behavior and constraints instead.
+4. If something is not covered in the context, say you are not sure.
+5. Stay in character as the user/requester.
+"""
+
 # Novice responder prompt - provides less detailed responses
 NOVICE_RESPONDER_PROMPT = """You are a user who has reported a problem or requested a feature.
 You are responding to questions from a developer who is implementing a solution.
@@ -69,6 +82,24 @@ Important guidelines:
 - If asked about edge cases you didn't consider, say you're not sure
 - Be helpful but don't pretend to know more than you do
 """
+
+NOVICE_RESPONDER_PROMPT_ENHANCED = """You are a non-technical user who reported a problem or requested a feature.
+You are responding to questions from a developer.
+
+Rules:
+1. Answer ONLY using the context provided below.
+2. Do NOT mention file names/paths, function/class names, stack traces, or code snippets.
+3. Describe expected behavior in plain language and user outcomes.
+4. If asked about technical internals, say you are not sure and describe what you observe/expect.
+5. Stay in character as a non-technical user.
+"""
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 # =============================================================================
@@ -95,6 +126,7 @@ class AskQuestionHyperparameters(BaseHyperparameters):
     responder_model: str = DEFAULT_RESPONDER_MODEL
     responder_api_key_env_var: str = ""
     responder_type: str = "expert"  # "expert" or "novice"
+    use_enhanced_prompts: bool = True
     
     # Context from the task (populated by from_benchmark_task)
     problem_statement: str = ""
@@ -184,11 +216,24 @@ Best practices:
         """
 
 
-        responder_model = harness_options.tool_options.get("ask_question", {}).get("responder_model", harness_options.model)
+        responder_model = harness_options.tool_options.get("ask_question", {}).get(
+            "responder_model", harness_options.model
+        )
 
-        responder_api_key_env_var = harness_options.tool_options.get("ask_question", {}).get("responder_api_key_env_var", "")
+        responder_api_key_env_var = harness_options.tool_options.get("ask_question", {}).get(
+            "responder_api_key_env_var", ""
+        )
 
-        responder_type = harness_options.tool_options.get("ask_question", {}).get("responder_type", "expert")
+        responder_type = harness_options.tool_options.get("ask_question", {}).get("responder_type")
+        if not responder_type:
+            responder_type = os.environ.get("RESPONDER_TYPE", "expert")
+
+        # Allow enabling enhanced prompts via tool options, falling back to env var
+        use_enhanced_prompts = harness_options.tool_options.get("ask_question", {}).get(
+            "use_enhanced_prompts"
+        )
+        if use_enhanced_prompts is None:
+            use_enhanced_prompts = _env_bool("USE_ENHANCED_PROMPTS", default=False)
         # Extract context from the task instance
         task_instance = task.task_instance
         
@@ -207,6 +252,7 @@ Best practices:
             responder_model=responder_model or DEFAULT_RESPONDER_MODEL,
             responder_api_key_env_var=responder_api_key_env_var,
             responder_type=responder_type,
+            use_enhanced_prompts=bool(use_enhanced_prompts),
             problem_statement=problem_statement,
             prompt_statement=prompt_statement,
             knowledge_base=knowledge_base,
@@ -220,11 +266,26 @@ Best practices:
         """Build the system prompt for the simulated responder."""
         hp = self.hyperparameters
         
-        # Select base prompt based on responder type
-        if hp.responder_type.lower() == "novice":
-            base_prompt = NOVICE_RESPONDER_PROMPT
+        use_enhanced = bool(getattr(hp, "use_enhanced_prompts", False))
+
+        responder_type = (hp.responder_type or "expert").strip().lower()
+        if responder_type == "novice":
+            base_prompt = (
+                NOVICE_RESPONDER_PROMPT_ENHANCED
+                if use_enhanced
+                else NOVICE_RESPONDER_PROMPT
+            )
         else:
-            base_prompt = EXPERT_RESPONDER_PROMPT
+            base_prompt = (
+                EXPERT_RESPONDER_PROMPT_ENHANCED
+                if use_enhanced
+                else EXPERT_RESPONDER_PROMPT
+            )
+
+        filtered_kb = filter_knowledge_base_for_responder(
+            kb=hp.knowledge_base,
+            responder_type=responder_type,
+        )
         
         # Format requirements as numbered list
         requirements_text = ""
@@ -252,7 +313,7 @@ Best practices:
 
 ## KNOWLEDGE BASE
 
-{hp.knowledge_base}"""
+{filtered_kb}"""
         
         return system_prompt
     

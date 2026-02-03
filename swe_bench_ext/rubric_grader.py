@@ -4,8 +4,6 @@ Concrete rubric grader implementation for SWE-Bench-Ext.
 Extends BaseRubricGrader with OpenAI/Anthropic LLM integration.
 """
 
-import sys
-from pathlib import Path
 from typing import Dict, Any, Optional
 
 from lighthouse.core.grading.rubric.base_grader import BaseRubricGrader
@@ -33,7 +31,6 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
             problem_statement=problem,
         )
     """
-    
     def _get_rubric_from_dict(self, rubric_dict: Dict[str, Any]) -> Rubric:
         """
         Parse harness rubric format into framework Rubric.
@@ -68,7 +65,7 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
         
         client = openai.AsyncOpenAI(api_key=self.api_key)
         model = self.model_name.split("/", 1)[1]  # Remove "openai/" prefix
-        
+
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
@@ -84,7 +81,7 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
         
         client = anthropic.AsyncAnthropic(api_key=self.api_key)
         model = self.model_name.split("/", 1)[1]  # Remove "anthropic/" prefix
-        
+
         response = await client.messages.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
