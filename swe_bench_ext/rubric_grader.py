@@ -66,12 +66,15 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
         client = openai.AsyncOpenAI(api_key=self.api_key)
         model = self.model_name.split("/", 1)[1]  # Remove "openai/" prefix
 
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.temperature,
+        kwargs = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
             # No max_tokens - uses model-specific default maximum
-        )
+        }
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
+
+        response = await client.chat.completions.create(**kwargs)
         
         return response.choices[0].message.content
     
@@ -82,12 +85,15 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
         client = anthropic.AsyncAnthropic(api_key=self.api_key)
         model = self.model_name.split("/", 1)[1]  # Remove "anthropic/" prefix
 
-        response = await client.messages.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.temperature,
-            max_tokens=8192,  # Required for Claude, using safe default that works for all models
-        )
+        kwargs = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 8192,  # Required for Claude, using safe default that works for all models
+        }
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
+
+        response = await client.messages.create(**kwargs)
         
         return response.content[0].text
     
@@ -107,13 +113,15 @@ class SweBenchExtRubricGrader(BaseRubricGrader):
         model = self.model_name.split("/", 1)[1]  # Remove "google/"/"gemini/" prefix
         
         # Create request without max_output_tokens - uses model default
+        config_kwargs = {}
+        if self.temperature is not None:
+            config_kwargs["temperature"] = self.temperature
+        # No max_output_tokens - uses model-specific default maximum (up to 65K for Gemini)
+        
         response = await client.aio.models.generate_content(
             model=model,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=self.temperature,
-                # No max_output_tokens - uses model-specific default maximum (up to 65K for Gemini)
-            ),
+            config=types.GenerateContentConfig(**config_kwargs) if config_kwargs else None,
         )
         
         # DEBUG: Log response structure

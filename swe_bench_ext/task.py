@@ -236,7 +236,8 @@ class SweBenchExtTask(BaseBenchmarkTask):
         ask_question_mode = (policy.ask_question_mode or "off").strip().lower()
         
         # Get tools enabled for this stage
-        stage_tool_names = stage.tool_names if stage.tool_names else []
+        # Fall back to options.tools (from CLI --tools/--add-tools) if stage doesn't specify tools
+        stage_tool_names = stage.tool_names if stage.tool_names else (getattr(options, 'tools', None) or [])
         
         # =====================================================================
         # PHASE 1: Build constant reminder items (constant mode implementation)
@@ -647,15 +648,30 @@ fi''')
         if inst.test_patch:
             script_parts.append("# Apply test patch")
             script_parts.append('echo "=== Applying test patch ==="')
-            # Use generate_git_apply_script and extract body (skip shebang and set -e)
-            test_apply_script = generate_git_apply_script(inst.test_patch, workdir)
+            # Use generate_git_apply_script with allow_incomplete=True to use --reject mode
+            # This allows partial application and creates .rej files for failed hunks
+            test_apply_script = generate_git_apply_script(inst.test_patch, workdir, allow_incomplete=True)
             test_apply_lines = test_apply_script.split('\n')[2:]  # Skip shebang and set -e
-            # Modify the git apply line to allow partial success (|| true)
+            # Add || true to git apply lines to prevent set -e from exiting the script
+            # when patches fail to apply (git apply --reject still returns non-zero on failures)
             test_apply_lines = [
                 line + ' || true' if 'git apply' in line else line
                 for line in test_apply_lines
             ]
             script_parts.append('\n'.join(test_apply_lines))
+            
+            # Report any failed patches to stderr
+            script_parts.append('''
+# Check for .rej files (hunks that failed to apply) and report to stderr
+rej_files=$(find . -name "*.rej" -type f 2>/dev/null)
+if [ -n "$rej_files" ]; then
+    echo "WARNING: Some patch hunks failed to apply:" >&2
+    for rej_file in $rej_files; do
+        # Get the original file name by removing .rej suffix
+        original_file="${rej_file%.rej}"
+        echo "  - Failed to patch: $original_file (see $rej_file for rejected hunks)" >&2
+    done
+fi''')
             script_parts.append('echo "Test patch applied"')
         else:
             script_parts.append("# No test patch to apply")
