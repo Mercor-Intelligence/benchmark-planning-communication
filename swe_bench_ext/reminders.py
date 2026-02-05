@@ -26,16 +26,16 @@ ASK_QUESTION_REMINDER_LINE = (
 class ConstantReminderWithTiming:
     """
     Handler that shows constant reminders with configurable frequency.
-    Current default value: frequency=50
+    Current default value: frequency=1 (every turn)
     """
     
-    def __init__(self, reminder_items: list[str], frequency: int = 50):
+    def __init__(self, reminder_items: list[str], frequency: int = 1):
         """
         Initialize with list of reminder strings to show.
         
         Args:
             reminder_items: List of reminder bullet points (e.g., ["- Created README...", ...])
-            frequency: Show reminder every N turns (default: 50, 0 = only at start)
+            frequency: Show reminder every N turns (default: 1). Set to <= 0 to disable.
         """
         self.reminder_items = reminder_items
         self.frequency = frequency
@@ -61,8 +61,11 @@ class ConstantReminderWithTiming:
         Returns:
             Footer text to show at stage start
         """
+        # For "every turn" reminders, avoid injecting at stage start so this
+        # doesn't look like "after every stage". The per-turn behavior is driven
+        # by on_continue().
         self.turn_count = 0  # Reset counter for new stage
-        return self.footer_text.strip()
+        return None
     
     async def on_continue(
         self,
@@ -75,14 +78,13 @@ class ConstantReminderWithTiming:
         Show reminders periodically (every N turns if frequency > 0).
         
         This provides gentle periodic nudges without overwhelming the agent.
-        Testing: frequency=50 as middle ground between once-only and every-turn.
         
         Returns:
             - Footer text every Nth turn (if frequency > 0)
             - None otherwise (adapter.py converts to True for react())
         """
-        # If frequency is 0, never repeat (only show at start)
-        if self.frequency == 0:
+        # Disabled when frequency <= 0
+        if self.frequency <= 0:
             return None
         
         self.turn_count += 1

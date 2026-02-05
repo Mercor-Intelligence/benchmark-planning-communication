@@ -234,10 +234,15 @@ class SweBenchExtTask(BaseBenchmarkTask):
         # Normalize modes
         readme_mode = (policy.readme_mode or "off").strip().lower()
         ask_question_mode = (policy.ask_question_mode or "off").strip().lower()
-        
-        # Get tools enabled for this stage
-        # Fall back to options.tools (from CLI --tools/--add-tools) if stage doesn't specify tools
-        stage_tool_names = stage.tool_names if stage.tool_names else (getattr(options, 'tools', None) or [])
+
+        # Get tools enabled for this stage.
+        # Fall back to options.tools (from CLI --tools/--add-tools) if stage doesn't specify tools.
+        if hasattr(stage, "tool_names") and stage.tool_names:
+            stage_tool_names = stage.tool_names
+        elif options is not None and hasattr(options, "tools") and options.tools is not None:
+            stage_tool_names = options.tools
+        else:
+            stage_tool_names = []
         
         # =====================================================================
         # PHASE 1: Build constant reminder items (constant mode implementation)
@@ -248,11 +253,10 @@ class SweBenchExtTask(BaseBenchmarkTask):
         if readme_mode == "constant":
             constant_items.append(README_REMINDER_LINE)
         
-        # ask_question reminder: only shown if mode is "constant" AND tool is available
+        # ask_question reminder: shown when mode is "constant" AND the tool is available.
         if ask_question_mode == "constant":
             if "ask_question" in stage_tool_names:
                 constant_items.append(ASK_QUESTION_REMINDER_LINE)
-            # else: skip reminder - tool not available, would confuse agent!
         
         # If no reminders enabled, return None 
         if not constant_items:
@@ -262,7 +266,8 @@ class SweBenchExtTask(BaseBenchmarkTask):
         # Create timing-aware handler 
         # =====================================================================
         # This handler checks for assistant_messages before showing reminders
-        timing_handler = ConstantReminderWithTiming(reminder_items=constant_items)
+        # Default to "every turn" reminders.
+        timing_handler = ConstantReminderWithTiming(reminder_items=constant_items, frequency=1)
         
         # =====================================================================
         # Return CompositeUserMessageHandler
