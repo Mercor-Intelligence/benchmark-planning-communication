@@ -384,8 +384,6 @@ class SweBenchExtTask(BaseBenchmarkTask):
 
         if not task_instance.image_uri:
             task_instance.image_uri = image_uri_override if image_uri_override else task.get_default_image_uri()
-
-        task_source.build_docker_image_if_not_exists(task_id, task_instance.image_uri)
         
         # Attach rubric grader if rubric exists
         # Note: We only create the grader instance here. The actual rubric loading
