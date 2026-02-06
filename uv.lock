@@ -1517,7 +1517,7 @@ wheels = [
 [[package]]
 name = "lighthouse"
 version = "0.1.0"
-source = { git = "https://github.com/Mercor-Intelligence/lighthouse.git?rev=michaelliao%2Fsif-support#a7707bdf8d31299d5e01ae6b8b2dcd3b18f2eb49" }
+source = { git = "https://github.com/Mercor-Intelligence/lighthouse.git?rev=michaelliao%2Fsif-support#30960c4d417735530fb32765d3d280f5ffba3c63" }
 dependencies = [
     { name = "boto3" },
     { name = "daytona" },
