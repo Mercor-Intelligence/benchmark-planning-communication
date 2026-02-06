@@ -114,7 +114,7 @@ class AskQuestionHyperparameters(BaseHyperparameters):
     Attributes:
         history_path: Path to store chat history in the sandbox.
         responder_model: LLM model to use for simulating user responses.
-        responder_api_key: Environment variable name for the API key.
+        responder_api_key: API key for the responder model (optional).
         responder_type: Type of responder ("expert" or "novice").
         problem_statement: The problem description for context.
         prompt_statement: The user request/prompt for context.
@@ -124,7 +124,7 @@ class AskQuestionHyperparameters(BaseHyperparameters):
     """
     history_path: str = ASK_QUESTION_HISTORY_PATH
     responder_model: str = DEFAULT_RESPONDER_MODEL
-    responder_api_key_env_var: str = ""
+    responder_api_key: str = ""
     responder_type: str = "expert"  # "expert" or "novice"
     use_enhanced_prompts: bool = True
     
@@ -160,7 +160,7 @@ class AskQuestionTool(BaseTool):
     Hyperparameters:
         history_path: Path for chat history persistence.
         responder_model: LLM model for simulated responses.
-        responder_api_key_env_var: Env var for API key.
+        responder_api_key: API key for the responder model.
         responder_type: "expert" or "novice" persona.
         problem_statement: Problem context for the responder.
         prompt_statement: User request context.
@@ -220,8 +220,8 @@ Best practices:
             "responder_model", harness_options.model
         )
 
-        responder_api_key_env_var = harness_options.tool_options.get("ask_question", {}).get(
-            "responder_api_key_env_var", ""
+        responder_api_key = harness_options.tool_options.get("ask_question", {}).get(
+            "responder_api_key", ""
         )
 
         responder_type = harness_options.tool_options.get("ask_question", {}).get("responder_type")
@@ -250,7 +250,7 @@ Best practices:
         
         hyperparams = AskQuestionHyperparameters(
             responder_model=responder_model or DEFAULT_RESPONDER_MODEL,
-            responder_api_key_env_var=responder_api_key_env_var,
+            responder_api_key=responder_api_key or "",
             responder_type=responder_type,
             use_enhanced_prompts=bool(use_enhanced_prompts),
             problem_statement=problem_statement,
@@ -387,16 +387,11 @@ Best practices:
             messages.extend(chat_history)
             
 
-            if hp.responder_api_key_env_var:
-                api_key = os.environ.get(hp.responder_api_key_env_var)
-            else:
-                api_key = None
-
             # Make async LLM call using litellm
             response = await litellm.acompletion(
                 model=hp.responder_model,
                 messages=messages,
-                api_key=api_key,
+                api_key=hp.responder_api_key or None,
             )
             
             assistant_response = response.choices[0].message.content or ""
