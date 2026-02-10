@@ -161,10 +161,15 @@ class SweBenchExtTask(BaseBenchmarkTask):
 
         return stages
 
-    def build_stage_system_prompt(self, stage: TaskStage, tool_prompts: Optional[List[str]] = None) -> str:
+    def build_stage_system_prompt(self, stage: TaskStage, tool_prompts: Optional[List[str]] = None) -> Optional[str]:
         """
         Optional per-stage system prompt override (via config.stage_system_prompts[stage.id]).
-        Falls back to BaseBenchmarkTask behavior.
+
+        - If an explicit override exists for this stage in config, use it.
+        - For the first stage, fall back to the default task system prompt.
+        - For subsequent stages with no override, return None so that no
+          duplicate system message is inserted (the first stage's system
+          prompt is already in the conversation history).
         """
         stage_system_prompts = getattr(self.config, "stage_system_prompts", {}) or {}
         override = (stage_system_prompts.get(stage.id) or "").strip()
@@ -173,6 +178,14 @@ class SweBenchExtTask(BaseBenchmarkTask):
             if tool_prompts:
                 prompt += "\n\n" + "\n".join(tool_prompts)
             return prompt
+
+        # Only the first stage gets the default system prompt.
+        # Later stages inherit it via conversation history; returning None
+        # tells the harness to skip inserting a system message for this stage.
+        stages = self.get_stages()
+        if stages and stage.id != stages[0].id:
+            return None
+
         return super().build_stage_system_prompt(stage, tool_prompts=tool_prompts)
 
     def build_stage_user_prompt(self, stage: TaskStage, tool_prompts: Optional[List[str]] = None) -> str:
