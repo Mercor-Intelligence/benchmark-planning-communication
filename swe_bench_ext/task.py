@@ -747,7 +747,9 @@ fi''')
             'echo "<<<SWE_BENCH_EXT_TEST_OUTPUT_START>>>"',
             "",
             "# Run tests",
-            test_cmd,
+            # Merge stderr into stdout so marker-bounded output is complete
+            # even in environments that only consume stdout for parsing.
+            f"({test_cmd}) 2>&1",
             "test_exit_code=$?",
             "",
         ]
