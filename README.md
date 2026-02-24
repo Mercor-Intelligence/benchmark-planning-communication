@@ -6,7 +6,7 @@ SWE-Bench Extended benchmark task implementation for [lighthouse](https://github
 
 ### 1. Installation
 
-This project uses [uv](https://docs.astral.sh/uv/) for fast, reliable Python package management.
+We recommend [uv](https://docs.astral.sh/uv/) for fast, reliable Python package management.
 
 ```bash
 # Install uv if you don't have it
@@ -15,14 +15,26 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Clone and install
 git clone --recursive https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext.git
 cd benchmark-swe-bench-ext
-uv sync
+```
 
-# Set up environment variables
+Install the package along with the `lighthouse` dependency using one of the methods below:
+
+```bash
+# Via HTTPS (recommended for most users)
+uv pip install -e ".[lighthouse_https]"
+
+# Via SSH (if you have SSH keys configured for GitHub)
+uv pip install -e ".[lighthouse_ssh]"
+```
+
+Then set up your environment variables:
+
+```bash
 cp .env.example .env
 # Edit .env and fill in values needed for local execution
 ```
 
-### 2. Configure Task Source
+### 2. Set Up a Local Task Source
 
 Copy the example configuration files:
 
@@ -31,7 +43,7 @@ cp config/task_source_config.yaml.example config/task_source_config.yaml
 cp config/benchmark_task_config.yaml.example config/benchmark_task_config.yaml
 ```
 
-Edit `config/task_source_config.yaml` to point to your tasks:
+The default `config/task_source_config.yaml` points to a local `tasks/` directory:
 
 ```yaml
 source_type: local_folder
@@ -40,7 +52,79 @@ config:
   build_image_if_not_exists: true
 ```
 
-### 3. Configure Benchmark (Optional)
+Place your task folders under `tasks/`. Each task lives in its own subdirectory:
+
+```
+tasks/
+├── my-org-my-repo-123/
+│   ├── Dockerfile                 # Environment setup (required)
+│   ├── test_metadata.json         # Test configuration (required)
+│   ├── problem_statement.md       # Problem description
+│   ├── prompt_statement.md        # Agent prompt (optional, falls back to problem_statement)
+│   ├── golden.patch               # Reference solution
+│   ├── test.patch                 # Test patch applied before grading
+│   ├── requirements.json          # List of requirements
+│   ├── interface.md               # Interface specifications (optional)
+│   └── knowledge_base.md          # Additional context (optional)
+```
+
+With `build_image_if_not_exists: true`, lighthouse will automatically build Docker images from each task's `Dockerfile` when needed.
+
+### 3. Validate Your Tasks
+
+Before running full evaluations, use the validation commands to verify that your tasks are set up correctly. Validation grades two known solutions for each task and checks that:
+
+- An **empty solution** (no changes) scores **0.0**
+- The **golden solution** (`golden.patch`) scores **1.0**
+
+Validate a single task:
+
+```bash
+uv run lighthouse validate-single \
+    --benchmark swe_bench_ext \
+    --task-id my-org-my-repo-123 \
+    --task-source-file config/task_source_config.yaml
+```
+
+Or validate all tasks in a batch using a `tasks.jsonl` file:
+
+```jsonl
+{"task_id": "my-org-my-repo-123"}
+{"task_id": "my-org-my-repo-456"}
+```
+
+```bash
+uv run lighthouse validate-batch \
+    --benchmark swe_bench_ext \
+    --tasks-file tasks.jsonl \
+    --task-source-file config/task_source_config.yaml
+```
+
+Validation supports additional options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--test-timeout` | 600 | Timeout for test execution in seconds |
+| `--num-epochs` | 1 | Number of validation runs per task |
+| `--sandbox-type` | modal | Sandbox type (`modal` or `docker`) |
+| `--output-dir` | logs | Directory to write validation results |
+
+### 4. Run Your First Evaluation
+
+Once validation passes, run an agent evaluation:
+
+```bash
+uv run lighthouse execute-single \
+    --benchmark swe_bench_ext \
+    --task-id my-org-my-repo-123 \
+    --model anthropic/claude-sonnet-4-5-20250929 \
+    --task-source-file config/task_source_config.yaml \
+    --benchmark-overrides-file config/benchmark_task_config.yaml
+```
+
+> **Note:** If using uv, you can run commands with `uv run lighthouse ...`. Alternatively, activate your virtual environment first (`source .venv/bin/activate`) and run `lighthouse ...` directly.
+
+### 5. Configure Benchmark (Optional)
 
 Edit `config/benchmark_task_config.yaml` to customize benchmark behavior. The defaults work out of the box, but you can adjust these options:
 
@@ -61,7 +145,7 @@ reminder_policy:
   artifact_mode: "off"
 ```
 
-### 4. Configure Tools (Optional)
+### 6. Configure Tools (Optional)
 
 The agent has access to a default set of tools. You can customize which tools are available:
 
@@ -91,19 +175,6 @@ Then pass it to the CLI:
 ```bash
 uv run lighthouse execute-single ... --tool-options-file config/tool_options.yaml
 ```
-
-### 5. Run Your First Evaluation
-
-```bash
-uv run lighthouse execute-single \
-    --benchmark swe_bench_ext \
-    --task-id django__django-12345 \
-    --model anthropic/claude-sonnet-4-5-20250929 \
-    --task-source-file config/task_source_config.yaml \
-    --benchmark-overrides-file config/benchmark_task_config.yaml
-```
-
-> **Note:** All `lighthouse` commands should be run with `uv run lighthouse` to use the uv-managed environment, or activate the virtual environment first with `source .venv/bin/activate`.
 
 ## Running Evaluations
 
@@ -200,6 +271,40 @@ uv run lighthouse grade-batch \
 | `--analyze-trajectory` / `--no-analyze-trajectory` | true | Enable/disable trajectory analysis |
 | `--derive-failure-mode` / `--no-derive-failure-mode` | true | Enable/disable failure mode derivation |
 
+## Validating Tasks
+
+Validation checks that a task's test harness is working correctly by grading two known solutions: an empty patch (expected score: 0.0) and the golden patch (expected score: 1.0). This is the recommended first step before running agent evaluations.
+
+### Validate a Single Task
+
+```bash
+uv run lighthouse validate-single \
+    --benchmark swe_bench_ext \
+    --task-id my-org-my-repo-123 \
+    --task-source-file config/task_source_config.yaml
+```
+
+### Validate Multiple Tasks (Batch)
+
+```bash
+uv run lighthouse validate-batch \
+    --benchmark swe_bench_ext \
+    --tasks-file tasks.jsonl \
+    --task-source-file config/task_source_config.yaml
+```
+
+Results are written to the `--output-dir` (default: `logs/`) with per-task validation details and a `summary.json`.
+
+### Validation Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--test-timeout` | 600 | Test execution timeout in seconds |
+| `--num-epochs` | 1 | Number of validation runs per task (for flakiness detection) |
+| `--sandbox-type` | modal | Sandbox type (`modal` or `docker`) |
+| `--output-dir` | logs | Directory to write validation results |
+| `--concurrency-limit` | (no limit) | Maximum concurrent validations |
+
 ## Common Commands
 
 ```bash
@@ -229,6 +334,20 @@ uv run lighthouse grade-batch \
     --predictions-file predictions.jsonl \
     --task-source-file config/task_source_config.yaml \
     --test-timeout 1200
+
+# Validate a single task using Docker
+uv run lighthouse validate-single \
+    --benchmark swe_bench_ext \
+    --task-id my-org-my-repo-123 \
+    --task-source-file config/task_source_config.yaml \
+    --sandbox-type docker
+
+# Validate all tasks in batch with concurrency limit
+uv run lighthouse validate-batch \
+    --benchmark swe_bench_ext \
+    --tasks-file tasks.jsonl \
+    --task-source-file config/task_source_config.yaml \
+    --concurrency-limit 5
 ```
 
 ---

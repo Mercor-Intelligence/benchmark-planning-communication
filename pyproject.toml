@@ -11,12 +11,14 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
     "litellm>=1.80.0",
+]
+
+[project.optional-dependencies]
+lighthouse_https = [
     "lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse@latest",
-    # Uses floating 'latest' tag - auto-updates when lighthouse releases new version
-    # To release new lighthouse version:
-    # 1. Create version tag: git tag v0.3.0 && git push origin v0.3.0
-    # 2. Move latest tag: git tag -f latest v0.3.0 && git push -f origin latest
-    # For dev testing: pip install "lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse.git@<branch-name>"
+]
+lighthouse_ssh = [
+    "lighthouse @ git+ssh://git@github.com/Mercor-Intelligence/lighthouse.git@latest",
 ]
 
 [project.urls]
@@ -31,4 +33,3 @@ packages = ["swe_bench_ext"]
 
 [tool.pyright]
 pythonVersion = "3.12"
-
