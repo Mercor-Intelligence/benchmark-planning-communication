@@ -27,6 +27,18 @@ uv pip install -e ".[lighthouse_https]"
 uv pip install -e ".[lighthouse_ssh]"
 ```
 
+**If you don't have access to the private GitHub repo**, place a copy of the `lighthouse` repository in a `lighthouse/` subdirectory at the project root, then install from the local path:
+
+```bash
+uv pip install -e ".[lighthouse_local]"
+```
+
+> **Note:** Because `uv run` attempts to resolve all optional dependencies (including the remote ones) when generating a lockfile, you should use the `--no-project` flag to skip project resolution:
+> ```bash
+> uv run --no-project lighthouse execute-single ...
+> ```
+> Alternatively, activate the virtual environment directly and run `lighthouse` without `uv run`.
+
 Then set up your environment variables:
 
 ```bash

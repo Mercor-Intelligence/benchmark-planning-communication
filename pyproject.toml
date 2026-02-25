@@ -20,6 +20,9 @@ lighthouse_https = [
 lighthouse_ssh = [
     "lighthouse @ git+ssh://git@github.com/Mercor-Intelligence/lighthouse.git@latest",
 ]
+lighthouse_local = [
+    "lighthouse @ {root:uri}/lighthouse",
+]
 
 [project.urls]
 Homepage = "https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext"
