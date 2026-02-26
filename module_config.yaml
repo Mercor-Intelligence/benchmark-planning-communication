@@ -1,2 +1,4 @@
+# planning_communication imports swe_bench_ext; both must be in the Modal image.
 LIGHTHOUSE_MODULE_PATHS:
   - swe_bench_ext
+  - planning_communication

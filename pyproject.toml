@@ -3,36 +3,29 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "benchmark-swe-bench-ext"
+name = "benchmark-planning-communication"
 version = "0.1.0"
-description = "SWE-Bench Extended benchmark task implementation for eval-framework"
+description = "Planning & Communication benchmark task for lighthouse, extending benchmark-swe-bench-ext"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
     "litellm>=1.80.0",
-]
-
-[project.optional-dependencies]
-lighthouse_https = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "google-genai>=1.60.0",
+    "benchmark-swe-bench-ext @ git+https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext@latest",
     "lighthouse @ git+https://github.com/Mercor-Intelligence/lighthouse@latest",
-]
-lighthouse_ssh = [
-    "lighthouse @ git+ssh://git@github.com/Mercor-Intelligence/lighthouse.git@latest",
-]
-lighthouse_local = [
-    "lighthouse @ {root:uri}/lighthouse",
 ]
 
 [project.urls]
-Homepage = "https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext"
-Repository = "https://github.com/Mercor-Intelligence/benchmark-swe-bench-ext.git"
+Repository = "https://github.com/Mercor-Intelligence/benchmark-planning-communication.git"
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["swe_bench_ext"]
+packages = ["planning_communication"]
 
 [tool.pyright]
 pythonVersion = "3.12"

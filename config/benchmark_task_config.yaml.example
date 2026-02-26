@@ -1,8 +1,19 @@
-# Benchmark task configuration for swe-bench-ext
+# Planning & Communication benchmark configuration
+# All SweBenchExtConfig options are inherited.
+
+# Context sections to exclude from agent prompts
+# Options: problem_statement, requirements, interface, knowledge_base
 excluded_context: []
-enable_pr_artifacts:
+
+# Rubric paths within each task directory
+planning_rubric_file: rubric/planning.json
+execution_rubric_file: rubric/execution.json
+
+# Reminder policy (modes: "off", "constant")
 reminder_policy:
   readme_mode: "off"
   ask_question_mode: "off"
   artifact_mode: "off"
 
+# Docker image template (for pre-built images from ECR)
+# image_uri_template: "account.dkr.ecr.region.amazonaws.com/repo:{task_id}"
