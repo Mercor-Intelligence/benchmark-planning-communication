@@ -42,7 +42,7 @@ P&C tasks extend the standard SWE-Bench-Ext layout with planning-specific files:
 
 ```
 tasks/
-└── my-task-123/
+└── <task-name>/
     ├── Dockerfile
     ├── test_metadata.json
     ├── problem_statement.md
@@ -52,7 +52,6 @@ tasks/
     ├── test.patch
     ├── requirements.json
     ├── interface.md
-    ├── knowledge_base.md
     └── rubric/
         ├── planning.json          # P&C-specific
         └── execution.json         # P&C-specific
@@ -87,6 +86,25 @@ lighthouse execute-batch \
 ```
 
 Execution runs use the Modal sandbox by default (`--sandbox-type modal`). Lighthouse **automatically runs execution rubric grading** after each run and includes rubric scores in the result. Use `--output-dir` (base dir you use for plan grading) so all evals live under one tree; lighthouse creates a timestamped subdir (e.g. `test-evals/2026-02-25_18-30-00/`) so runs don’t overwrite each other.
+
+### Execution grading on trajectories
+
+- **Merge run into evals tree:** Copy lighthouse's timestamped run into your evals tree so each task has `target/<task_id>/execution/<model>.json`:
+  ```bash
+  uv run python scripts/merge_execution_results.py --source test-evals/2026-02-26_02-58-14 --target test-evals
+  ```
+  With `--watch` you can point `--source` at the parent dir and merge results as they appear.
+
+- **Grade golden execution only:** Use plan grading with execution mode (reads `golden.patch` and writes `execution/golden.json`):
+  ```bash
+  uv run python scripts/run_plan_grading.py --tasks-dir tasks/ --output-dir test-evals --execution --mode golden-only --grade-model openai/gpt-4o
+  ```
+
+- **Grade model runs when lighthouse didn't:** If the streamed result has no `rubric_grade_summary` (e.g. Modal didn't run the grader), run the merge script with `--grade-missing` so it grades locally when merging and writes the same summary format as `golden.json`:
+  ```bash
+  uv run python scripts/merge_execution_results.py --source test-evals/2026-02-26_02-58-14 --target test-evals \
+    --grade-missing --tasks-dir /path/to/tasks --grade-model openai/gpt-4o
+  ```
 
 ### Grading Solutions
 
