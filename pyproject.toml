@@ -9,6 +9,7 @@ description = "Planning & Communication benchmark task for lighthouse, extending
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "pyyaml>=6.0",
     "pydantic>=2.0",
     "litellm>=1.80.0",
     "openai>=1.0.0",

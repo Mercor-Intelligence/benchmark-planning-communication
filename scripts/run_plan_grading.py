@@ -65,6 +65,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import litellm
+import yaml
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -81,6 +84,60 @@ def normalize_litellm_model(name: str) -> str:
     if s.startswith("google/gemini"):
         return "gemini/" + s.split("/", 1)[1]
     return s
+
+
+@dataclass
+class ModelSpec:
+    """Resolved model: litellm model id + optional custom endpoint."""
+    litellm_model: str
+    api_base: str | None = None
+    api_key: str | None = None
+    label: str = ""  # key for output filenames, e.g. bytedance-ark
+
+
+def load_models_config(path: Path) -> dict[str, dict] | None:
+    """Load YAML model config. Returns dict key -> { litellm_model, api_base?, api_key_env? } or None."""
+    if not path.exists():
+        return None
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    return data.get("models") or data
+
+
+def resolve_model_spec(
+    name: str,
+    models_config: dict[str, dict] | None,
+) -> ModelSpec:
+    """Resolve a model name (config key or raw litellm model) to ModelSpec."""
+    name = name.strip()
+    if models_config and name in models_config:
+        entry = models_config[name]
+        litellm_model = entry.get("litellm_model", name)
+        api_base = entry.get("api_base")
+        api_key_env = entry.get("api_key_env")
+        api_key = None
+        if api_key_env:
+            api_key = os.environ.get(api_key_env)
+            # Fireworks: accept either FIREWORKS_AI_API_KEY or FIREWORKS_API_KEY (both directions)
+            if not api_key and api_key_env == "FIREWORKS_AI_API_KEY":
+                api_key = os.environ.get("FIREWORKS_API_KEY")
+            if not api_key and api_key_env == "FIREWORKS_API_KEY":
+                api_key = os.environ.get("FIREWORKS_AI_API_KEY")
+            # ByteDance/ARK: accept either BYTEDANCE_API_KEY or ARK_API_KEY
+            if not api_key and api_key_env == "BYTEDANCE_API_KEY":
+                api_key = os.environ.get("ARK_API_KEY")
+        return ModelSpec(
+            litellm_model=normalize_litellm_model(litellm_model),
+            api_base=api_base,
+            api_key=api_key,
+            label=name,
+        )
+    return ModelSpec(
+        litellm_model=normalize_litellm_model(name),
+        api_base=None,
+        api_key=None,
+        label=name.split("/")[-1] if "/" in name else name,
+    )
 
 
 # =============================================================================
@@ -164,19 +221,21 @@ async def generate_plan(
     problem_statement: str,
     planning_statement: str,
     model: str,
+    api_base: str | None = None,
+    api_key: str | None = None,
 ) -> str:
     """Generate a plan using litellm."""
-    import litellm
-
     prompt = PLAN_GENERATION_PROMPT.format(
         problem_statement=problem_statement,
         planning_statement=planning_statement,
     )
 
-    response = await litellm.acompletion(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    kwargs = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+    if api_base is not None:
+        kwargs["api_base"] = api_base
+    if api_key is not None:
+        kwargs["api_key"] = api_key
+    response = await litellm.acompletion(**kwargs)
     return response.choices[0].message.content
 
 
@@ -187,14 +246,19 @@ async def grade_against_rubric(
     rubric_type: str,
     model: str,
     api_key: str | None = None,
+    api_base: str | None = None,
 ) -> dict:
     """Grade content against a rubric. Works for both plan and execution grading."""
     if rubric_type == "planning":
         from planning_communication.planning_rubric_grader import PlanningRubricGrader
-        grader = PlanningRubricGrader(model_name=model, api_key=api_key)
+        grader = PlanningRubricGrader(
+            model_name=model, api_key=api_key, api_base=api_base,
+        )
     else:
         from planning_communication.execution_rubric_grader import ExecutionRubricGrader
-        grader = ExecutionRubricGrader(model_name=model, api_key=api_key)
+        grader = ExecutionRubricGrader(
+            model_name=model, api_key=api_key, api_base=api_base,
+        )
 
     grader.load_rubric_from_dict(rubric_dict)
 
@@ -302,7 +366,7 @@ class Job:
 
 def output_path(output_dir: Path, job: Job) -> Path:
     model_name = "golden" if job.is_golden else job.model
-    # Normalize model names for filenames (anthropic/claude-sonnet-4-5 -> claude-sonnet-4-5)
+    # Use key as filename (e.g. bytedance-ark) or last segment of litellm model
     safe_name = model_name.split("/")[-1] if "/" in model_name else model_name
     return output_dir / job.task_id / job.rubric_type / f"{safe_name}.json"
 
@@ -323,7 +387,8 @@ async def run_job(
     job: Job,
     task: TaskData,
     output_dir: Path,
-    grade_model: str,
+    plan_spec: ModelSpec,
+    grade_spec: ModelSpec,
     sem: asyncio.Semaphore,
 ) -> dict:
     """Execute a single job: generate (if needed) + grade."""
@@ -345,14 +410,24 @@ async def run_job(
                 else:
                     plan_text = await retry_with_backoff(
                         lambda: generate_plan(
-                            task.problem_statement, task.planning_statement, job.model,
+                            task.problem_statement,
+                            task.planning_statement,
+                            plan_spec.litellm_model,
+                            api_base=plan_spec.api_base,
+                            api_key=plan_spec.api_key,
                         ),
                         desc=f"{desc}/gen",
                     )
 
                 grade_result = await retry_with_backoff(
                     lambda: grade_against_rubric(
-                        plan_text, rubric, context, "planning", grade_model,
+                        plan_text,
+                        rubric,
+                        context,
+                        "planning",
+                        grade_spec.litellm_model,
+                        api_key=grade_spec.api_key,
+                        api_base=grade_spec.api_base,
                     ),
                     desc=f"{desc}/grade",
                 )
@@ -372,7 +447,13 @@ async def run_job(
 
                 grade_result = await retry_with_backoff(
                     lambda: grade_against_rubric(
-                        patch_text, rubric, context, "execution", grade_model,
+                        patch_text,
+                        rubric,
+                        context,
+                        "execution",
+                        grade_spec.litellm_model,
+                        api_key=grade_spec.api_key,
+                        api_base=grade_spec.api_base,
                     ),
                     desc=f"{desc}/grade",
                 )
@@ -390,6 +471,9 @@ async def run_job(
                 "summary": grade_result["summary"],
                 "time_seconds": round(elapsed, 3),
             }
+            # Always store the generated plan for planning jobs
+            if job.rubric_type == "planning":
+                result["generated_plan"] = plan_text
 
             out.write_text(json.dumps(result, indent=2))
             log.info(f"[{desc}] score={result['score']:.4f} ({elapsed:.1f}s)")
@@ -484,9 +568,31 @@ async def run_all(args):
         log.error(f"Tasks directory not found or not a directory: {args.tasks_dir}")
         sys.exit(1)
     task_ids = get_task_list(args.tasks_dir, args.task_id, args.tasks_file)
-    plan_models = [normalize_litellm_model(m) for m in args.plan_models.split(",") if m.strip()]
+    models_config = load_models_config(args.models_config) if getattr(args, "models_config", None) else None
+    # Plan model list: from config (all keys) when --models-config and no --plan-models, else from --plan-models
+    if args.plan_models is None or (isinstance(args.plan_models, str) and not args.plan_models.strip()):
+        if models_config:
+            plan_model_keys = list(models_config.keys())
+            log.info("Using all models from --models-config (omit --plan-models to use config)")
+        else:
+            plan_model_keys = ["anthropic/claude-sonnet-4-5-20250929"]
+    else:
+        plan_model_keys = [m.strip() for m in args.plan_models.split(",") if m.strip()]
+    plan_models = plan_model_keys  # used for job keys and logging
+    model_specs: dict[str, ModelSpec] = {
+        key: resolve_model_spec(key, models_config) for key in plan_model_keys
+    }
+    grade_spec = resolve_model_spec(args.grade_model.strip(), models_config)
     run_execution = args.execution
 
+    if models_config:
+        log.info(f"Models config: {args.models_config} ({len(models_config)} entries)")
+        for key in plan_model_keys:
+            spec = model_specs[key]
+            base = f" api_base={spec.api_base}" if spec.api_base else ""
+            log.info(f"  Plan model '{key}' -> {spec.litellm_model}{base}")
+        log.info(f"  Grade model '{args.grade_model}' -> {grade_spec.litellm_model}"
+                 f"{' api_base=' + grade_spec.api_base if grade_spec.api_base else ''}")
     log.info(f"Tasks: {len(task_ids)} | Plan models: {plan_models} | "
              f"Execution grading: {run_execution} | Workers: {args.workers}")
 
@@ -549,7 +655,14 @@ async def run_all(args):
 
     async def _run_batch(jobs: list[Job]) -> list[dict]:
         coros = [
-            run_job(j, tasks[j.task_id], args.output_dir, args.grade_model, sem)
+            run_job(
+                j,
+                tasks[j.task_id],
+                args.output_dir,
+                model_specs.get(j.model, resolve_model_spec(j.model, models_config)),
+                grade_spec,
+                sem,
+            )
             for j in jobs
         ]
         return await asyncio.gather(*coros, return_exceptions=True)
@@ -617,6 +730,7 @@ async def run_all(args):
     summary = {
         "plan_models": plan_models,
         "grade_model": args.grade_model,
+        "models_config": str(args.models_config) if getattr(args, "models_config", None) else None,
         "execution_grading": run_execution,
         "total_tasks": len(task_ids),
         "total_jobs": len(all_jobs),
@@ -633,7 +747,7 @@ def main():
         description="Multi-model P&C plan generation and rubric grading",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--tasks-dir", type=Path, required=True)
+    p.add_argument("--tasks-dir", type=Path, required=False, help="Tasks directory (required unless --list-models)")
     p.add_argument("--output-dir", type=Path, default=Path("evals"))
     p.add_argument("--task-id", type=str, default=None, help="Single task")
     p.add_argument(
@@ -643,10 +757,16 @@ def main():
     p.add_argument(
         "--plan-models",
         type=str,
-        default="anthropic/claude-sonnet-4-5-20250929",
-        help="Comma-separated models for plan generation",
+        default=None,
+        help="Comma-separated plan models; if using --models-config, omit to run all models in the YAML",
     )
     p.add_argument("--grade-model", type=str, default="openai/gpt-4o")
+    p.add_argument(
+        "--models-config",
+        type=Path,
+        default=None,
+        help="YAML model config: model keys -> litellm_model, optional api_base, api_key_env. Enables custom endpoints (e.g. ByteDance ARK).",
+    )
     p.add_argument(
         "--execution", action="store_true",
         help="Also grade golden patches against execution rubric",
@@ -661,11 +781,37 @@ def main():
         "--overwrite", action="store_true",
         help="Overwrite existing result files instead of skipping complete jobs",
     )
+    p.add_argument(
+        "--list-models", action="store_true",
+        help="Load --models-config, print resolved model endpoints, and exit (for confirmation).",
+    )
     args = p.parse_args()
+
+    if args.list_models and args.models_config:
+        models_config = load_models_config(args.models_config)
+        if not models_config:
+            log.error("No models in config or YAML not available")
+            sys.exit(1)
+        print("Resolved model endpoints (from --models-config):")
+        for key, entry in sorted(models_config.items()):
+            spec = resolve_model_spec(key, models_config)
+            base = f"  api_base={spec.api_base}" if spec.api_base else ""
+            key_env = entry.get("api_key_env", "")
+            key_note = f"  api_key from {key_env}" if key_env else ""
+            print(f"  {key}")
+            print(f"    litellm_model={spec.litellm_model}{base}{key_note}")
+        sys.exit(0)
+
+    if not args.tasks_dir or not args.tasks_dir.is_dir():
+        p.error("--tasks-dir is required and must be an existing directory")
 
     if args.verify_only:
         task_ids = get_task_list(args.tasks_dir, args.task_id, args.tasks_file)
-        plan_models = [normalize_litellm_model(m.strip()) for m in args.plan_models.split(",")]
+        _models_config = load_models_config(args.models_config) if args.models_config else None
+        if args.plan_models is None or (isinstance(args.plan_models, str) and not args.plan_models.strip()):
+            plan_models = list(_models_config.keys()) if _models_config else ["anthropic/claude-sonnet-4-5-20250929"]
+        else:
+            plan_models = [normalize_litellm_model(m.strip()) for m in args.plan_models.split(",")]
         all_jobs = []
         for tid in task_ids:
             td = args.tasks_dir / tid

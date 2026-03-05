@@ -2,7 +2,7 @@
 # All SweBenchExtConfig options are inherited.
 
 # Context sections to exclude from agent prompts
-# Options: problem_statement, requirements, interface, knowledge_base
+# Options: problem_statement, requirements, interface
 excluded_context: []
 
 # Rubric paths within each task directory
@@ -16,4 +16,8 @@ reminder_policy:
   artifact_mode: "off"
 
 # Docker image template (for pre-built images from ECR)
-# image_uri_template: "account.dkr.ecr.region.amazonaws.com/repo:{task_id}"
+# {task_id} is replaced with the task identifier at runtime
+# image_uri_template: "YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/apex-swe-bench-ext:{task_id}"
+
+# S3 task source path (for s3_bundle/s3_zip task sources)
+# s3_task_source_path: "s3://YOUR_BUCKET/YOUR_PREFIX"

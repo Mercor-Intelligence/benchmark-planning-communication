@@ -16,7 +16,43 @@ class ExecutionRubricGrader(SweBenchExtRubricGrader):
 
     Uses the same major=2/minor=1 weighting as PlanningRubricGrader
     for consistency with the imperium-tooling scoring system.
+
+    When api_base is set (e.g. custom ByteDance/Volcengine ARK), uses LiteLLM
+    instead of the base class's OpenAI/Anthropic/Google clients.
     """
+
+    def __init__(
+        self,
+        rubric: Optional[Any] = None,
+        model_name: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(
+            rubric=rubric,
+            model_name=model_name,
+            api_key=api_key,
+            temperature=temperature,
+            **kwargs,
+        )
+        self.api_base = api_base
+
+    async def _call_llm(self, prompt: str) -> str:
+        """Use LiteLLM when api_base is set (custom OpenAI-compatible endpoint)."""
+        if self.api_base is not None:
+            import litellm
+            kwargs = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "api_base": self.api_base,
+            }
+            if self.api_key is not None:
+                kwargs["api_key"] = self.api_key
+            response = await litellm.acompletion(**kwargs)
+            return response.choices[0].message.content
+        return await super()._call_llm(prompt)
 
     # P&C execution rubrics follow this category order
     CATEGORY_ORDER = ("correctness", "functional", "robustness", "style")

@@ -36,6 +36,8 @@ cp config/task_source_config.yaml.example config/task_source_config.yaml
 cp config/benchmark_task_config.yaml.example config/benchmark_task_config.yaml
 ```
 
+Set API keys in `.env` for the providers you use (OpenAI, Anthropic, Google, Fireworks, ByteDance); see `.env.example`. For multi-model plan grading with custom endpoints, use `config/plan_grading_models.yaml` (see Plan Generation & Grading below).
+
 ## Task Structure
 
 P&C tasks extend the standard SWE-Bench-Ext layout with planning-specific files:
@@ -87,24 +89,15 @@ lighthouse execute-batch \
 
 Execution runs use the Modal sandbox by default (`--sandbox-type modal`). Lighthouse **automatically runs execution rubric grading** after each run and includes rubric scores in the result. Use `--output-dir` (base dir you use for plan grading) so all evals live under one tree; lighthouse creates a timestamped subdir (e.g. `test-evals/2026-02-25_18-30-00/`) so runs don’t overwrite each other.
 
-### Execution grading on trajectories
+### Execution grading
 
-- **Merge run into evals tree:** Copy lighthouse's timestamped run into your evals tree so each task has `target/<task_id>/execution/<model>.json`:
-  ```bash
-  uv run python scripts/merge_execution_results.py --source test-evals/2026-02-26_02-58-14 --target test-evals
-  ```
-  With `--watch` you can point `--source` at the parent dir and merge results as they appear.
+- **From the harness:** When you run `lighthouse execute-single` or `execute-batch`, the harness runs the execution rubric grader after each run and stores the result (e.g. `rubric_grade_summary`) in the run output. Execution results live in lighthouse’s timestamped output dir (e.g. `test-evals/2026-02-25_18-30-00/`). Use that output as the source of truth for model execution grades.
 
-- **Grade golden execution only:** Use plan grading with execution mode (reads `golden.patch` and writes `execution/golden.json`):
+- **Grade golden execution only (no harness):** To grade only the reference solution (`golden.patch`) against the execution rubric, use plan grading with `--execution`. That writes `output-dir/<task_id>/execution/golden.json` in the same format as plan grading (score, criteria_results, summary):
   ```bash
-  uv run python scripts/run_plan_grading.py --tasks-dir tasks/ --output-dir test-evals --execution --mode golden-only --grade-model openai/gpt-4o
+  uv run python scripts/run_plan_grading.py --tasks-dir /path/to/tasks --output-dir evals --execution --grade-model openai/gpt-4o
   ```
-
-- **Grade model runs when lighthouse didn't:** If the streamed result has no `rubric_grade_summary` (e.g. Modal didn't run the grader), run the merge script with `--grade-missing` so it grades locally when merging and writes the same summary format as `golden.json`:
-  ```bash
-  uv run python scripts/merge_execution_results.py --source test-evals/2026-02-26_02-58-14 --target test-evals \
-    --grade-missing --tasks-dir /path/to/tasks --grade-model openai/gpt-4o
-  ```
+  This does not grade model-generated solutions; for those, run the execution harness and use the grades produced there.
 
 ### Grading Solutions
 
@@ -118,7 +111,7 @@ lighthouse grade-single \
 
 ## Plan Generation & Grading (Separate)
 
-Plan grading runs independently of execution — outside the lighthouse harness.
+Plan grading runs independently of execution — outside the lighthouse harness. For each task, the script generates plans with the requested models, grades them (and the golden plan when present) against the planning rubric, and writes one JSON per task/model containing `score`, `criteria_results`, `summary`, and `generated_plan`.
 
 **Run with the project environment** so `planning_communication` and `litellm` are available:
 
@@ -131,29 +124,29 @@ source .venv/bin/activate
 python scripts/run_plan_grading.py ...
 ```
 
+**Using a models config (recommended):** Use `--models-config config/plan_grading_models.yaml` to run all models in the YAML with their endpoints and API keys. Omit `--plan-models` to use every key in the config, or pass `--plan-models claude-sonnet-4.5,kimi-k2-thinking` to run a subset.
+
 Examples:
 
 ```bash
-# Grade the golden plan for a single task
+# Single task, one plan model
 uv run python scripts/run_plan_grading.py \
-    --tasks-dir tasks/ \
+    --tasks-dir /path/to/tasks \
     --task-id my-task-123 \
-    --mode golden-only \
+    --plan-models anthropic/claude-sonnet-4-5-20250929 \
     --grade-model openai/gpt-4o
 
-# Generate plans with a model and grade them
+# All tasks, all models from YAML (custom endpoints for Kimi, ByteDance, etc.)
 uv run python scripts/run_plan_grading.py \
-    --tasks-dir tasks/ \
-    --mode both \
-    --plan-model google/gemini-2.5-pro \
-    --grade-model openai/gpt-4o
+    --tasks-dir /path/to/tasks \
+    --output-dir plan-grading-evals \
+    --models-config config/plan_grading_models.yaml \
+    --grade-model openai/gpt-4o \
+    --workers 50
 
-# Batch all tasks
-uv run python scripts/run_plan_grading.py \
-    --tasks-dir tasks/ \
-    --output-dir grading-results/ \
-    --workers 20
 ```
+
+Output layout: `output-dir/<task_id>/planning/<model>.json` (and `output-dir/<task_id>/execution/golden.json` when using `--execution`). Each planning JSON includes `generated_plan` (the plan that was graded). Use `--overwrite` to regenerate and overwrite existing result files.
 
 ## Rubric Format
 
@@ -189,7 +182,7 @@ benchmark-planning-communication/
 │   └── execution_rubric_grader.py   # Evaluates code against execution rubric
 ├── scripts/
 │   └── run_plan_grading.py          # Standalone plan generation + grading
-├── config/                          # Config examples
+├── config/                          # Config examples + plan_grading_models.yaml
 ├── module_config.yaml               # Registers with lighthouse plugin system
 ├── pyproject.toml
 └── README.md
